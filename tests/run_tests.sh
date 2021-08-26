@@ -19,13 +19,6 @@ function doit()
     ./a.out
   done
 }
-FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
-
-# MotörSYCL (MotorSYCL) using NVIDIA nvc++
-if [[ -v MYNVCPP ]]; then
-  TOKENSTRING="$MYNVCPP/bin/nvc++ -stdpar -std=c++20 ${INC} %s"
-  doit
-fi
 
 FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
 
