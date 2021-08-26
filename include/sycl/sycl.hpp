@@ -1260,6 +1260,7 @@ constexpr auto is_generic_v = is_generic<T>::value;
 } // namespace detail
 
 // Section 4.7.7. Address space classes
+// Section 4.7.7.1. Multi-pointer class
 namespace access {
 
 enum class address_space : int {
@@ -1325,17 +1326,20 @@ public:
   multi_ptr(std::nullptr_t) : m_p{} {}
 
   // Only if Space == global_space or generic_space
-  template <int dimensions, access_mode Mode, access::placeholder isPlaceholder>
-  multi_ptr(accessor<value_type, dimensions, Mode, target::device, isPlaceholder>);
+  template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  multi_ptr(accessor<value_type, dims, Mode, target::device, isPlaceholder>)
+    requires(Space==access::address_space::local_space ||
+             Space==access::address_space::generic_space)
+  { assert(0); }
 
   // Only if Space == local_space or generic_space
-  //template <int dimensions>
-  //multi_ptr(local_accessor<ElementType, dimensions>);
+  //template <int dims>
+  //multi_ptr(local_accessor<ElementType, dims>);
 
   // Deprecated
   // Only if Space == local_space or generic_space
-  template <int dimensions, access_mode Mode, access::placeholder isPlaceholder>
-  multi_ptr(accessor<value_type, dimensions, Mode, target::local, isPlaceholder>);
+  template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  multi_ptr(accessor<value_type, dims, Mode, target::local, isPlaceholder>);
 
   // Assignment and access operators
 
@@ -1377,7 +1381,8 @@ public:
   // Only if Space == address_space::generic_space
   // Cast to global_ptr
   explicit operator multi_ptr<value_type, access::address_space::global_space,
-                              DecorateAddress>();
+                              DecorateAddress>()
+    requires(Space==access::address_space::generic_space);
 
   // Only if Space == address_space::generic_space
   // Cast to global_ptr
@@ -1516,18 +1521,18 @@ public:
   multi_ptr(std::nullptr_t);
 
   // Only if Space == global_space
-  template <typename ElementType, int dimensions, access_mode Mode,
+  template <typename ElementType, int dims, access_mode Mode,
             access::placeholder isPlaceholder>
-  multi_ptr(accessor<ElementType,dimensions,Mode,target::device,isPlaceholder>);
+  multi_ptr(accessor<ElementType, dims,Mode, target::device, isPlaceholder>);
 
   // Only if Space == local_space
-  //template <typename ElementType, int dimensions>
-  //multi_ptr(local_accessor<ElementType, dimensions>);
+  //template <typename ElementType, int dims>
+  //multi_ptr(local_accessor<ElementType, dims>);
   // Deprecated
   // Only if Space == local_space
-  template <typename ElementType, int dimensions, access_mode Mode,
+  template <typename ElementType, int dims, access_mode Mode,
             access::placeholder isPlaceholder>
-  multi_ptr(accessor<ElementType,dimensions,Mode,target::local,isPlaceholder>);
+  multi_ptr(accessor<ElementType,dims,Mode,target::local,isPlaceholder>);
 
   // Assignment operators
   multi_ptr &operator=(const multi_ptr&);
@@ -1674,16 +1679,16 @@ public:
   ElementType* operator->() const { return m_p; }
 
   // Only if Space == global_space
-  template <int dimensions, access_mode Mode, access::placeholder isPlaceholder>
-  multi_ptr(accessor<ElementType,dimensions,Mode,target::device,isPlaceholder>);
+  template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  multi_ptr(accessor<ElementType, dims, Mode, target::device, isPlaceholder>);
 
   // Only if Space == local_space
-  template <int dimensions, access_mode Mode, access::placeholder isPlaceholder>
-  multi_ptr(accessor<ElementType,dimensions,Mode,target::local,isPlaceholder>);
+  template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  multi_ptr(accessor<ElementType, dims, Mode, target::local, isPlaceholder>);
 
   // Only if Space == constant_space
-  template <int dimensions, access_mode Mode, access::placeholder isPlaceholder>
-  multi_ptr(accessor<ElementType,dimensions,Mode,target::constant_buffer,isPlaceholder>);
+  template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  multi_ptr(accessor<ElementType, dims, Mode, target::constant_buffer, isPlaceholder>);
 
   // Returns the underlying OpenCL C pointer
   pointer_t get() const { return m_p; }
@@ -1804,16 +1809,16 @@ public:
   multi_ptr &operator=(std::nullptr_t);
 
   // Only if Space == global_space
-  template <typename ElementType, int dimensions, access_mode Mode>
-  multi_ptr(accessor<ElementType, dimensions, Mode, target::device>);
+  template <typename ElementType, int dims, access_mode Mode>
+  multi_ptr(accessor<ElementType, dims, Mode, target::device>);
 
   // Only if Space == local_space
-  template <typename ElementType, int dimensions, access_mode Mode>
-  multi_ptr(accessor<ElementType, dimensions, Mode, target::local>);
+  template <typename ElementType, int dims, access_mode Mode>
+  multi_ptr(accessor<ElementType, dims, Mode, target::local>);
 
   // Only if Space == constant_space
-  template <typename ElementType, int dimensions, access_mode Mode>
-  multi_ptr(accessor<ElementType, dimensions, Mode, target::constant_buffer>);
+  template <typename ElementType, int dims, access_mode Mode>
+  multi_ptr(accessor<ElementType, dims, Mode, target::constant_buffer>);
 
   // Returns the underlying OpenCL C pointer
   pointer_t get() const;
@@ -2018,10 +2023,10 @@ public:
 
   ~queue() { wait(); }
 
-  backend get_backend() const noexcept { assert(0); }
-  context get_context() const { return context{}; } // todo
+  backend get_backend() const noexcept { assert(0); return {}; }
+  context get_context() const { assert(0); return context{}; } // todo
   device get_device() const { return dev_; }
-  bool is_in_order() const { assert(0); }
+  bool is_in_order() const { assert(0); return {}; }
 
   /* -- convenience shortcuts -- */
 
@@ -2076,11 +2081,13 @@ public:
 
   event memcpy(void* dest, const void* src, size_t numBytes, event depEvent) {
     assert(0);
+    return {};
   }
 
   event memcpy(void* dest, const void* src, size_t numBytes,
                const std::vector<event> &depEvents) {
     assert(0);
+    return {};
   }
 
   template <typename param>
@@ -2961,6 +2968,7 @@ T* malloc_device(size_t count, const queue& q, const property_list &ps = {}) {
 // Section 4.8.3.3. Host allocation functions
 void* malloc_host(size_t nbytes, const queue& q, const property_list &ps = {}) {
   assert(0);
+  return {};
 }
 
 // Section 4.8.3.4. Shared allocation functions
