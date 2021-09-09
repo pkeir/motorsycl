@@ -915,8 +915,6 @@ class item
   range<dims> range_;
   id<dims> offset_;
 
-  using self = item<dims,true>;
-
   template <int, bool> friend class item;
   template <typename> friend class detail::iter;
   // To access default ctor at two iterq ctors: using T{i,r} & T{i,r,p}:
@@ -958,11 +956,11 @@ public:
     else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
   }
 
-  // Section 4.5.4 Table 4.4
-  friend bool operator==(const self& x, const self& y) {
+  // Common by-value semantics Section 4.5.3 Table 10
+  friend bool operator==(const item& x, const item& y) {
     return x.id_==y.id_ && x.range_==y.range_ && x.offset_==y.offset_;
   }
-  friend bool operator!=(const self& x, const self& y) { return !(x==y); }
+  friend bool operator!=(const item& x, const item& y) { return !(x==y); }
 };
 
 template <int dims>
@@ -970,8 +968,6 @@ class item<dims,false>
 {
   id<dims> id_;
   range<dims> range_;
-
-  using self = item<dims,false>;
 
   template <typename> friend class detail::iter;
   template <typename T, bool> friend class detail::iterq;
@@ -1010,10 +1006,10 @@ public:
     else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
   }
 
-  friend bool operator==(const self& x, const self& y) {
+  friend bool operator==(const item& x, const item& y) {
     return x.id_==y.id_ && x.range_==y.range_;
   }
-  friend bool operator!=(const self& x, const self& y) { return !(x==y); }
+  friend bool operator!=(const item& x, const item& y) { return !(x==y); }
 };
 
 // Section 4.9.1.5 nd_item class
@@ -1022,8 +1018,6 @@ class nd_item
 {
   id<dims> id_;
   nd_range<dims> nd_range_;
-
-  using self = nd_item<dims>;
 
   template <size_t, int d> friend auto& get(nd_item<d>&);
   template <size_t, int d> friend const auto& get(const nd_item<d>&);
@@ -2190,7 +2184,6 @@ void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
   auto f = [=]() {
     using item_t = item<dims,true>;
     id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{},o)};
-//    detail::iterq<sycl::item<dims,true>> begin{o,r,o}, end{stop,r,o};
     detail::iterq begin{item_t{o,r,o}}, end{item_t{stop,r,o}};
     std::for_each(detail::g_pol, begin, end, k);
   };
