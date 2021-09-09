@@ -2145,19 +2145,7 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
 } // namespace detail
 
 template <typename K>
-void handler::single_task(const K& k)
-{
-  const int dims{1};
-  const range<dims> r{1};
-
-  auto f = [=]() {
-    id<dims> extent{r};
-    id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{})};
-    detail::iterq begin{id<dims>{},extent}, end{stop,extent};
-    std::for_each(detail::g_pol, begin, end, [=](auto &i){ k(); });
-  };
-  q_.stdq_.push(f);
-}
+void handler::single_task(const K& k) { q_.stdq_.push(k); }
 
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
@@ -2166,7 +2154,7 @@ void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
     id<dims> extent{r};
     id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{})};
     detail::iterq begin{id<dims>{},extent}, end{stop,extent};
-    std::for_each(detail::g_pol, begin, end, [=](auto &i){ k(i); });
+    std::for_each(detail::g_pol, begin, end, k);
   };
   q_.stdq_.push(f);
 }
@@ -2178,7 +2166,7 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
     using item_t = item<dims,false>;
     id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{})};
     detail::iterq begin{item_t{id<dims>{},r}}, end{item_t{stop,r}};
-    std::for_each(detail::g_pol, begin, end, [=](auto &i){ k(i); });
+    std::for_each(detail::g_pol, begin, end, k);
   };
   q_.stdq_.push(f);
 }
@@ -2190,7 +2178,7 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
     using item_t = nd_item<dims>;
     id stop{detail::make_stop(r.get_global_range()[0],std::make_index_sequence<dims>{})};
     detail::iterq begin{item_t{id<dims>{},r}}, end{item_t{stop,r}};
-    std::for_each(detail::g_pol, begin, end, [=](auto &i){ k(i); });
+    std::for_each(detail::g_pol, begin, end, k);
   };
   q_.stdq_.push(f);
 }
@@ -2204,7 +2192,7 @@ void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
     id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{},o)};
 //    detail::iterq<sycl::item<dims,true>> begin{o,r,o}, end{stop,r,o};
     detail::iterq begin{item_t{o,r,o}}, end{item_t{stop,r,o}};
-    std::for_each(detail::g_pol, begin, end, [=](auto &i){ k(i); });
+    std::for_each(detail::g_pol, begin, end, k);
   };
   q_.stdq_.push(f);
 }
