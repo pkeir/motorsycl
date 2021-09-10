@@ -6,6 +6,7 @@
 #include <cassert>
 
 class Foo;
+bool basic_nd_item_type(const sycl::nd_item<2>&);
 
 bool simple_2d_nd_range()
 {
@@ -38,6 +39,9 @@ bool simple_2d_nd_range()
         bool b1 = d1*gw + d0 == linear_id;
 #else
         bool b1 = d0*gw + d1 == linear_id; // Correct (3.11.1 Linearization)
+#endif
+#ifdef __MOTORSYCL__
+        b1 = b1 && basic_nd_item_type(i);
 #endif
         acc[global_id] = b1;
       });
@@ -73,19 +77,31 @@ bool basic_nd_range_type()
 }
 
 #if defined(__MOTORSYCL__)
-bool basic_nd_item_type()
+bool basic_nd_item_type(const sycl::nd_item<2>& i)
 {
-  sycl::range<2> g1{12,4};
+  if (i.get_global_id() != sycl::id<2>{6,3}) return true;
+  /*sycl::range<2> g1{12,4};
   sycl::range<2> l1{4,2};
   sycl::nd_range<2> nd{g1,l1};
+      range<2> gr{8, 4};
+      range<2> lr{4, 2};
+*/
 
 //  sycl::nd_item<2> i{sycl::id<2>{6,3},nd}; // no such constructor exists
-  sycl::nd_item<2> i = sycl::detail::mk_nd_item(sycl::id<2>{6,3},nd);
-  bool b = sycl::id<2>{6,3}==i.get_global_id();
+//  sycl::nd_item<2> i = sycl::detail::mk_nd_item(sycl::id<2>{6,3},nd);
+/*  bool b = sycl::id<2>{6,3}==i.get_global_id();
   b = b && sycl::id<2>{2,1}==i.get_local_id();
   b = b && 2==i.get_local_id(0) && 1==i.get_local_id(1);
   b = b && sycl::id<2>{12,4}==i.get_global_range();
   b = b && 12==i.get_global_range(0) && 4==i.get_global_range(1);
+  b = b && sycl::id<2>{4,2}==i.get_local_range();
+  b = b && 4==i.get_local_range(0) && 2==i.get_local_range(1);
+*/
+  bool b{true};
+  b = b && sycl::id<2>{2,1}==i.get_local_id();
+  b = b && 2==i.get_local_id(0) && 1==i.get_local_id(1);
+  b = b && sycl::id<2>{8,4}==i.get_global_range();
+  b = b && 8==i.get_global_range(0) && 4==i.get_global_range(1);
   b = b && sycl::id<2>{4,2}==i.get_local_range();
   b = b && 4==i.get_local_range(0) && 2==i.get_local_range(1);
   return b;
@@ -96,7 +112,7 @@ int main(int argc, char *argv[])
 {
   assert(basic_nd_range_type());
 #if defined(__MOTORSYCL__)
-  assert(basic_nd_item_type());
+//  assert(basic_nd_item_type());
 #endif
   assert(simple_2d_nd_range());
   return 0;

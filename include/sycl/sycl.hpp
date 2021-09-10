@@ -903,9 +903,19 @@ mk_item(const id<dims>& i, const range<dims>& r, const id<dims>& o) {
   return {i,r,o};
 }
 
+#ifdef __NVCOMPILER
+
+template <int dims>
+nd_item<dims>
+mk_nd_item(const id<dims>& offset) { return {offset}; }
+
+#else // __NVCOMPILER
+
 template <int dims>
 nd_item<dims>
 mk_nd_item(const id<dims>& i, const nd_range<dims>& r) { return {i,r}; }
+
+#endif // __NVCOMPILER
 
 } // namespace detail
 
@@ -1084,6 +1094,10 @@ template <>
 class nd_item<1>
 {
   id<1> offset_;
+
+  // nd_item is not user-constructible; and non-aggregate with a private member
+  nd_item(const id<1>& offset) : offset_{offset} {}
+  friend nd_item<1> detail::mk_nd_item(const id<1>&);
 
 public:
   id<1> get_global_id() const {
