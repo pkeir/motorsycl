@@ -1083,7 +1083,7 @@ public:
 template <>
 class nd_item<1>
 {
-  nd_range<1> nd_range_;
+  id<1> offset_;
 
 public:
   id<1> get_global_id() const {
@@ -1112,15 +1112,17 @@ public:
   range<1> get_local_range() const { return {blockDim.x}; }
   size_t get_local_range(int dim) const { return blockDim.x; }
 
-  [[deprecated]] id<1> get_offset() const { return nd_range_.get_offset(); }
+  [[deprecated]] id<1> get_offset() const { return offset_; }
 
-  nd_range<1> get_nd_range() const { return nd_range_; }
+  nd_range<1> get_nd_range() const {
+    return {get_global_range(), get_local_range(), offset_};
+  }
 };
 
 template <>
 class nd_item<2>
 {
-  nd_range<2> nd_range_;
+  id<2> offset_;
 
 public:
   id<2> get_global_id() const {
@@ -1164,9 +1166,11 @@ public:
     return dim ? blockDim.y : blockDim.x;
   }
 
-  [[deprecated]] id<2> get_offset() const { return nd_range_.get_offset(); }
+  [[deprecated]] id<2> get_offset() const { return offset_; }
 
-  nd_range<2> get_nd_range() const { return nd_range_; }
+  nd_range<2> get_nd_range() const {
+    return {get_global_range(), get_local_range(), offset_};
+  }
 };
 
 #else //  __NVCOMPILER
