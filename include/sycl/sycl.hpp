@@ -33,8 +33,9 @@ class device;
 class context;
 class exception_list;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
-template <int = 1> class nd_range;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
 template <int = 1, bool with_offset = true> class item;
 template <int = 1> class nd_item;
 template <typename, int> class vec;
@@ -812,8 +813,9 @@ range(std::size_t, std::size_t) -> range<2>;
 range(std::size_t, std::size_t, std::size_t) -> range<3>;
 
 // Section 4.9.1.7. group class
-template <int dims = 1>
-class group
+template <int dims>
+requires(dims==1||dims==2||dims==3)
+class group : public std::array<std::size_t, dims>
 {
 public:
   using id_type = id<dims>;
@@ -943,10 +945,7 @@ public:
   size_t get_range(int dim) const { return range_[dim]; }
   id<dims> get_offset() const { return offset_; }
 
-  operator size_t() const requires(dims==1) {
-    static_assert(dims==1);
-    return id_[0];
-  }
+  operator size_t() const requires(dims==1) { return id_[0]; }
 
   size_t get_linear_id() const
   {
@@ -1011,6 +1010,166 @@ public:
   }
   friend bool operator!=(const item& x, const item& y) { return !(x==y); }
 };
+
+template <int dims>
+requires(dims==1||dims==2||dims==3)
+class id : public std::array<std::size_t, dims>
+{
+public:
+  id() = default;
+/*  id(std::size_t d, std::convertible_to<std::size_t> auto... ds)
+    requires((sizeof...(ds))+1==dims)
+    : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
+// GCC bug 100138. Workaround below:
+*/
+  template <typename ...Ts>
+  id(std::size_t d, Ts... ds)
+    requires((sizeof...(Ts))+1==dims &&
+              (std::convertible_to<Ts,std::size_t> && ...))
+    : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
+  id(const range<dims> &range) : std::array<std::size_t,dims>{range} {}
+
+  size_t get(int dim) const { return this->operator[](dim); }
+  operator size_t() const requires(dims==1) { return (*this)[0]; }
+
+  mk_bin_ops(id);
+  mk_inc_by_ops(id);
+  mk_unary_ops(id);
+  mk_inc_ops(id);
+};
+
+// Deduction guides
+id(std::size_t) -> id<1>;
+id(std::size_t, std::size_t) -> id<2>;
+id(std::size_t, std::size_t, std::size_t) -> id<3>;
+
+// Section 4.9.1.2. nd_range class
+template <int dims>
+requires(dims==1||dims==2||dims==3)
+class nd_range
+{
+  range<dims> global_range_;
+  range<dims> local_range_;
+  id<dims> offset_;
+
+  template <typename> friend class detail::iter;
+
+public:
+
+  nd_range() = default;
+
+  nd_range(range<dims> g, range<dims> l, id<dims> offset = id<dims>{})
+    : global_range_{g}, local_range_{l}, offset_{offset} { }
+
+  friend bool operator==(const nd_range& lhs, const nd_range& rhs) {
+    return lhs.get_global_range() == rhs.get_global_range() &&
+           lhs.get_local_range() == rhs.get_local_range(); }
+  friend bool operator!=(const nd_range& lhs, const nd_range& rhs) {
+    return !(lhs==rhs);
+  }
+
+  range<dims> get_global_range() const { return global_range_; }
+  range<dims> get_local_range() const { return local_range_; }
+  range<dims> get_group_range() const {
+    return
+    detail::zip_with<range<dims>>(std::divides{}, global_range_, local_range_);
+  }
+  id<dims> get_offset() const { return offset_; } // Deprecated SYCL 2020
+};
+
+#ifdef __NVCOMPILER
+
+// Section 4.9.1.5 nd_item class
+template <>
+class nd_item<1>
+{
+  nd_range<1> nd_range_;
+
+public:
+  id<1> get_global_id() const {
+    return {blockIdx.x *blockDim.x + threadIdx.x};
+  }
+  size_t get_global_id(int dim) const {
+    return blockIdx.x *blockDim.x + threadIdx.x;
+  }
+  size_t get_global_linear_id() const {
+    return blockIdx.x *blockDim.x + threadIdx.x;
+  }
+  id<1> get_local_id() const { return {threadIdx.x}; }
+  size_t get_local_id(int dim) const { return threadIdx.x; }
+  size_t get_local_linear_id() const { return threadIdx.x; }
+
+  group<1> get_group() const { return {blockIdx.x}; }
+  size_t get_group(int dim) const { return blockIdx.x; }
+  size_t get_group_linear_id() const { return blockIdx.x; }
+
+  range<1> get_group_range() const { return {gridDim.x}; }
+  size_t get_group_range(int dim) const { return gridDim.x; }
+
+  range<1> get_global_range() const { return {gridDim.x * blockDim.x}; }
+  size_t get_global_range(int dim) const { return gridDim.x * blockDim.x; }
+
+  range<1> get_local_range() const { return {blockDim.x}; }
+  size_t get_local_range(int dim) const { return blockDim.x; }
+
+  [[deprecated]] id<1> get_offset() const { return nd_range_.get_offset(); }
+
+  nd_range<1> get_nd_range() const { return nd_range_; }
+};
+
+template <>
+class nd_item<2>
+{
+  nd_range<2> nd_range_;
+
+public:
+  id<2> get_global_id() const {
+    return {blockIdx.x * blockDim.x + threadIdx.x,
+            blockIdx.y * blockDim.y + threadIdx.y};
+  }
+  size_t get_global_id(int dim) const {
+    return dim ? blockIdx.y * blockDim.y + threadIdx.y :
+                 blockIdx.x * blockDim.x + threadIdx.x;
+  }
+  size_t get_global_linear_id() const {
+    const id<2> gi2 = get_global_id();
+    return get_global_range(1) * gi2.get(1) + gi2.get(0);
+  }
+  id<2> get_local_id() const { return {threadIdx.x, threadIdx.y}; }
+  size_t get_local_id(int dim) const { return dim ? threadIdx.y : threadIdx.x; }
+  size_t get_local_linear_id() const {
+    return blockDim.x * threadIdx.y + threadIdx.x;
+  }
+
+  group<2> get_group() const { return {blockIdx.x, blockIdx.y}; }
+  size_t get_group(int dim) const { return dim ? blockIdx.y : blockIdx.x; }
+  size_t get_group_linear_id() const {
+    return gridDim.x * blockIdx.y + blockIdx.x;
+  }
+
+  range<2> get_group_range() const { return {gridDim.x, gridDim.y}; }
+  size_t get_group_range(int dim) const {
+    return dim ? gridDim.y : gridDim.x;
+  }
+
+  range<2> get_global_range() const {
+    return {gridDim.x * blockDim.x, gridDim.y * blockDim.y};
+  }
+  size_t get_global_range(int dim) const {
+    return dim ? gridDim.y * blockDim.y : gridDim.x * blockDim.x;
+  }
+
+  range<2> get_local_range() const { return {blockDim.x, blockDim.y}; }
+  size_t get_local_range(int dim) const {
+    return dim ? blockDim.y : blockDim.x;
+  }
+
+  [[deprecated]] id<2> get_offset() const { return nd_range_.get_offset(); }
+
+  nd_range<2> get_nd_range() const { return nd_range_; }
+};
+
+#else //  __NVCOMPILER
 
 // Section 4.9.1.5 nd_item class
 template <int dims>
@@ -1083,70 +1242,7 @@ public:
   nd_range<dims> get_nd_range() const { return nd_range_; }
 };
 
-template <int dims>
-requires(dims==1||dims==2||dims==3)
-class id : public std::array<std::size_t, dims>
-{
-public:
-  id() = default;
-/*  id(std::size_t d, std::convertible_to<std::size_t> auto... ds)
-    requires((sizeof...(ds))+1==dims)
-    : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
-// GCC bug 100138. Workaround below:
-*/
-  template <typename ...Ts>
-  id(std::size_t d, Ts... ds)
-    requires((sizeof...(Ts))+1==dims &&
-              (std::convertible_to<Ts,std::size_t> && ...))
-    : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
-  id(const range<dims> &range) : std::array<std::size_t,dims>{range} {}
-
-  size_t get(int dim) const { return this->operator[](dim); }
-  operator size_t() const requires(dims==1) { return (*this)[0]; }
-
-  mk_bin_ops(id);
-  mk_inc_by_ops(id);
-  mk_unary_ops(id);
-  mk_inc_ops(id);
-};
-
-// Deduction guides
-id(std::size_t) -> id<1>;
-id(std::size_t, std::size_t) -> id<2>;
-id(std::size_t, std::size_t, std::size_t) -> id<3>;
-
-// Section 4.9.1.2. nd_range class
-template <int dims>
-class nd_range
-{
-  range<dims> global_range_;
-  range<dims> local_range_;
-  id<dims> offset_;
-
-  template <typename> friend class detail::iter;
-
-public:
-
-  nd_range() = default;
-
-  nd_range(range<dims> g, range<dims> l, id<dims> offset = id<dims>{})
-    : global_range_{g}, local_range_{l}, offset_{offset} { }
-
-  friend bool operator==(const nd_range& lhs, const nd_range& rhs) {
-    return lhs.get_global_range() == rhs.get_global_range() &&
-           lhs.get_local_range() == rhs.get_local_range(); }
-  friend bool operator!=(const nd_range& lhs, const nd_range& rhs) {
-    return !(lhs==rhs);
-  }
-
-  range<dims> get_global_range() const { return global_range_; }
-  range<dims> get_local_range() const { return local_range_; }
-  range<dims> get_group_range() const {
-    return
-    detail::zip_with<range<dims>>(std::divides{}, global_range_, local_range_);
-  }
-  id<dims> get_offset() const { return offset_; } // Deprecated SYCL 2020
-};
+#endif // __NVCOMPILER
 
 // Section 4.7.6.1 Access targets
 enum class target {
@@ -2136,6 +2232,23 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
   return id<1+sizeof...(xs)>{r0+o[0],o[xs]...};
 }
 
+#ifdef __NVCOMPILER
+template <int dims, typename K>
+__global__ void cuda_kernel_launch(const K& k)
+{
+/*  if constexpr (1==dims) { k(detail::mk_nd_item( // flatten
+  const range<2> gr{1, 1};
+  const range<2> lr{1, 1};
+//  const nd_item<dims> i{gr,lr};
+  const auto i = detail::mk_nd_item(id<dims>{0,0}, nd_range<dims>{gr,lr});
+  threadIdx.x;
+  threadIdx.y;
+  threadIdx.z;
+  k(i);
+*/
+}
+#endif // __NVCOMPILER
+
 } // namespace detail
 
 template <typename K>
@@ -2165,6 +2278,22 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
   q_.stdq_.push(f);
 }
 
+#ifdef __NVCOMPILER
+
+template <int dims, typename K>
+void handler::parallel_for(nd_range<dims> r, const K& k)
+{
+  std::cout << "Ok\n";
+
+  auto f = [=]() {
+    detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
+    cudaDeviceSynchronize(); // for now
+  };
+  q_.stdq_.push(f);
+}
+
+#else
+
 template <int dims, typename K>
 void handler::parallel_for(nd_range<dims> r, const K& k)
 {
@@ -2176,6 +2305,8 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
   };
   q_.stdq_.push(f);
 }
+
+#endif
 
 // Deprecated in SYCL 2020
 template <int dims, typename K>
