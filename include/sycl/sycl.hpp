@@ -1100,35 +1100,39 @@ class nd_item<1>
   friend nd_item<1> detail::mk_nd_item(const id<1>&);
 
 public:
-  id<1> get_global_id() const {
+  __device__ id<1> get_global_id() const {
     return {blockIdx.x *blockDim.x + threadIdx.x};
   }
-  size_t get_global_id(int dim) const {
+  __device__ size_t get_global_id(int dim) const {
     return blockIdx.x *blockDim.x + threadIdx.x;
   }
-  size_t get_global_linear_id() const {
+  __device__ size_t get_global_linear_id() const {
     return blockIdx.x *blockDim.x + threadIdx.x;
   }
-  id<1> get_local_id() const { return {threadIdx.x}; }
-  size_t get_local_id(int dim) const { return threadIdx.x; }
-  size_t get_local_linear_id() const { return threadIdx.x; }
+  __device__ id<1> get_local_id() const { return {threadIdx.x}; }
+  __device__ size_t get_local_id(int dim) const { return threadIdx.x; }
+  __device__ size_t get_local_linear_id() const { return threadIdx.x; }
 
-  group<1> get_group() const { return {blockIdx.x}; }
-  size_t get_group(int dim) const { return blockIdx.x; }
-  size_t get_group_linear_id() const { return blockIdx.x; }
+  __device__ group<1> get_group() const { return {blockIdx.x}; }
+  __device__ size_t get_group(int dim) const { return blockIdx.x; }
+  __device__ size_t get_group_linear_id() const { return blockIdx.x; }
 
-  range<1> get_group_range() const { return {gridDim.x}; }
-  size_t get_group_range(int dim) const { return gridDim.x; }
+  __device__ range<1> get_group_range() const { return {gridDim.x}; }
+  __device__ size_t get_group_range(int dim) const { return gridDim.x; }
 
-  range<1> get_global_range() const { return {gridDim.x * blockDim.x}; }
-  size_t get_global_range(int dim) const { return gridDim.x * blockDim.x; }
+  __device__ range<1> get_global_range() const {
+    return {gridDim.x * blockDim.x};
+  }
+  __device__ size_t get_global_range(int dim) const {
+    return gridDim.x * blockDim.x;
+  }
 
-  range<1> get_local_range() const { return {blockDim.x}; }
-  size_t get_local_range(int dim) const { return blockDim.x; }
+  __device__ range<1> get_local_range() const { return {blockDim.x}; }
+  __device__ size_t get_local_range(int dim) const { return blockDim.x; }
 
-  [[deprecated]] id<1> get_offset() const { return offset_; }
+  [[deprecated]] __device__ id<1> get_offset() const { return offset_; }
 
-  nd_range<1> get_nd_range() const {
+  __device__ nd_range<1> get_nd_range() const {
     return {get_global_range(), get_local_range(), offset_};
   }
 };
@@ -1138,51 +1142,61 @@ class nd_item<2>
 {
   id<2> offset_;
 
+  // nd_item is not user-constructible; and non-aggregate with a private member
+  nd_item(const id<2>& offset) : offset_{offset} {}
+  friend nd_item<2> detail::mk_nd_item(const id<2>&);
+
 public:
-  id<2> get_global_id() const {
+  __device__ id<2> get_global_id() const {
     return {blockIdx.x * blockDim.x + threadIdx.x,
             blockIdx.y * blockDim.y + threadIdx.y};
   }
-  size_t get_global_id(int dim) const {
+  __device__ size_t get_global_id(int dim) const {
     return dim ? blockIdx.y * blockDim.y + threadIdx.y :
                  blockIdx.x * blockDim.x + threadIdx.x;
   }
-  size_t get_global_linear_id() const {
+  __device__ size_t get_global_linear_id() const {
     const id<2> gi2 = get_global_id();
     return get_global_range(1) * gi2.get(1) + gi2.get(0);
   }
-  id<2> get_local_id() const { return {threadIdx.x, threadIdx.y}; }
-  size_t get_local_id(int dim) const { return dim ? threadIdx.y : threadIdx.x; }
-  size_t get_local_linear_id() const {
+  __device__ id<2> get_local_id() const { return {threadIdx.x, threadIdx.y}; }
+  __device__ size_t get_local_id(int dim) const {
+    return dim ? threadIdx.y : threadIdx.x;
+  }
+  __device__ size_t get_local_linear_id() const {
     return blockDim.x * threadIdx.y + threadIdx.x;
   }
 
-  group<2> get_group() const { return {blockIdx.x, blockIdx.y}; }
-  size_t get_group(int dim) const { return dim ? blockIdx.y : blockIdx.x; }
-  size_t get_group_linear_id() const {
+  __device__ group<2> get_group() const { return {blockIdx.x, blockIdx.y}; }
+  __device__ size_t get_group(int dim) const {
+    return dim ? blockIdx.y : blockIdx.x;
+  }
+  __device__ size_t get_group_linear_id() const {
     return gridDim.x * blockIdx.y + blockIdx.x;
   }
 
-  range<2> get_group_range() const { return {gridDim.x, gridDim.y}; }
-  size_t get_group_range(int dim) const {
+  __device__ range<2> get_group_range() const { return {gridDim.x, gridDim.y}; }
+  __device__ size_t get_group_range(int dim) const {
     return dim ? gridDim.y : gridDim.x;
   }
 
-  range<2> get_global_range() const {
+  __device__ range<2> get_global_range() const {
     return {gridDim.x * blockDim.x, gridDim.y * blockDim.y};
   }
-  size_t get_global_range(int dim) const {
+  __device__ size_t get_global_range(int dim) const {
     return dim ? gridDim.y * blockDim.y : gridDim.x * blockDim.x;
   }
 
-  range<2> get_local_range() const { return {blockDim.x, blockDim.y}; }
-  size_t get_local_range(int dim) const {
+  __device__ range<2> get_local_range() const {
+    return {blockDim.x, blockDim.y};
+  }
+  __device__ size_t get_local_range(int dim) const {
     return dim ? blockDim.y : blockDim.x;
   }
 
-  [[deprecated]] id<2> get_offset() const { return offset_; }
+  [[deprecated]] __device__ id<2> get_offset() const { return offset_; }
 
-  nd_range<2> get_nd_range() const {
+  __device__ nd_range<2> get_nd_range() const {
     return {get_global_range(), get_local_range(), offset_};
   }
 };
@@ -2254,6 +2268,7 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
 template <int dims, typename K>
 __global__ void cuda_kernel_launch(const K& k)
 {
+  k(mk_nd_item(id<2>{0,0}));
 /*  if constexpr (1==dims) { k(detail::mk_nd_item( // flatten
   const range<2> gr{1, 1};
   const range<2> lr{1, 1};

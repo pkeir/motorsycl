@@ -76,7 +76,7 @@ bool basic_nd_range_type()
   return b && b2;
 }
 
-#if defined(__MOTORSYCL__)
+#ifdef __MOTORSYCL__
 bool basic_nd_item_type(const sycl::nd_item<2>& i)
 {
   if (i.get_global_id() != sycl::id<2>{6,3}) return true;
@@ -106,7 +106,7 @@ bool basic_nd_item_type(const sycl::nd_item<2>& i)
   b = b && 4==i.get_local_range(0) && 2==i.get_local_range(1);
   return b;
 }
-#endif
+#endif // __MOTORSYCL__
 
 int main(int argc, char *argv[])
 {
