@@ -6,7 +6,8 @@
 #define __MOTORSYCL__
 #define SYCL_LANGUAGE_VERSION 202001
 
-#include "detail/zip_with.hpp"
+#include "sycl/detail/zip_with.hpp"
+#include "sycl/detail/sycl-forward-declarations.hpp"
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
 #include <type_traits>  // std::remove_const_t
@@ -26,23 +27,7 @@
 #include <exception>    // std::exception_ptr
 #include <system_error> // std::is_error_condition_enum
 
-namespace sycl
-{
-
-class device;
-class context;
-class exception_list;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
-template <int = 1, bool with_offset = true> class item;
-template <int = 1> class nd_item;
-template <typename, int> class vec;
-
-} // namespace sycl
-
-#include "detail/iterq.hpp"
+#include "sycl/detail/iterq.hpp"
 
 namespace sycl {
 
@@ -903,20 +888,6 @@ mk_item(const id<dims>& i, const range<dims>& r, const id<dims>& o) {
   return {i,r,o};
 }
 
-#ifdef __NVCOMPILER
-
-template <int dims>
-nd_item<dims>
-mk_nd_item(const id<dims>& offset) { return {offset}; }
-
-#else // __NVCOMPILER
-
-template <int dims>
-nd_item<dims>
-mk_nd_item(const id<dims>& i, const nd_range<dims>& r) { return {i,r}; }
-
-#endif // __NVCOMPILER
-
 } // namespace detail
 
 // Section 4.9.1.4 item class
@@ -1087,121 +1058,23 @@ public:
   id<dims> get_offset() const { return offset_; } // Deprecated SYCL 2020
 };
 
+} // namespace sycl
+
 #ifdef __NVCOMPILER
 
-// Section 4.9.1.5 nd_item class
-template <>
-class nd_item<1>
-{
-  id<1> offset_;
+#include "sycl/detail/cuda/nd_item.hpp"
 
-  // nd_item is not user-constructible; and non-aggregate with a private member
-  nd_item(const id<1>& offset) : offset_{offset} {}
-  friend nd_item<1> detail::mk_nd_item(const id<1>&);
+#else // __NVCOMPILER
 
-public:
-  __device__ id<1> get_global_id() const {
-    return {blockIdx.x *blockDim.x + threadIdx.x};
-  }
-  __device__ size_t get_global_id(int dim) const {
-    return blockIdx.x *blockDim.x + threadIdx.x;
-  }
-  __device__ size_t get_global_linear_id() const {
-    return blockIdx.x *blockDim.x + threadIdx.x;
-  }
-  __device__ id<1> get_local_id() const { return {threadIdx.x}; }
-  __device__ size_t get_local_id(int dim) const { return threadIdx.x; }
-  __device__ size_t get_local_linear_id() const { return threadIdx.x; }
+namespace sycl {
 
-  __device__ group<1> get_group() const { return {blockIdx.x}; }
-  __device__ size_t get_group(int dim) const { return blockIdx.x; }
-  __device__ size_t get_group_linear_id() const { return blockIdx.x; }
+namespace detail {
 
-  __device__ range<1> get_group_range() const { return {gridDim.x}; }
-  __device__ size_t get_group_range(int dim) const { return gridDim.x; }
+template <int dims>
+nd_item<dims>
+mk_nd_item(const id<dims>& i, const nd_range<dims>& r) { return {i,r}; }
 
-  __device__ range<1> get_global_range() const {
-    return {gridDim.x * blockDim.x};
-  }
-  __device__ size_t get_global_range(int dim) const {
-    return gridDim.x * blockDim.x;
-  }
-
-  __device__ range<1> get_local_range() const { return {blockDim.x}; }
-  __device__ size_t get_local_range(int dim) const { return blockDim.x; }
-
-  [[deprecated]] __device__ id<1> get_offset() const { return offset_; }
-
-  __device__ nd_range<1> get_nd_range() const {
-    return {get_global_range(), get_local_range(), offset_};
-  }
-};
-
-template <>
-class nd_item<2>
-{
-  id<2> offset_;
-
-  // nd_item is not user-constructible; and non-aggregate with a private member
-  nd_item(const id<2>& offset) : offset_{offset} {}
-  friend nd_item<2> detail::mk_nd_item(const id<2>&);
-
-public:
-  __device__ id<2> get_global_id() const {
-    return {blockIdx.x * blockDim.x + threadIdx.x,
-            blockIdx.y * blockDim.y + threadIdx.y};
-  }
-  __device__ size_t get_global_id(int dim) const {
-    return dim ? blockIdx.y * blockDim.y + threadIdx.y :
-                 blockIdx.x * blockDim.x + threadIdx.x;
-  }
-  __device__ size_t get_global_linear_id() const {
-    const id<2> gi2 = get_global_id();
-    return get_global_range(1) * gi2.get(1) + gi2.get(0);
-  }
-  __device__ id<2> get_local_id() const { return {threadIdx.x, threadIdx.y}; }
-  __device__ size_t get_local_id(int dim) const {
-    return dim ? threadIdx.y : threadIdx.x;
-  }
-  __device__ size_t get_local_linear_id() const {
-    return blockDim.x * threadIdx.y + threadIdx.x;
-  }
-
-  __device__ group<2> get_group() const { return {blockIdx.x, blockIdx.y}; }
-  __device__ size_t get_group(int dim) const {
-    return dim ? blockIdx.y : blockIdx.x;
-  }
-  __device__ size_t get_group_linear_id() const {
-    return gridDim.x * blockIdx.y + blockIdx.x;
-  }
-
-  __device__ range<2> get_group_range() const { return {gridDim.x, gridDim.y}; }
-  __device__ size_t get_group_range(int dim) const {
-    return dim ? gridDim.y : gridDim.x;
-  }
-
-  __device__ range<2> get_global_range() const {
-    return {gridDim.x * blockDim.x, gridDim.y * blockDim.y};
-  }
-  __device__ size_t get_global_range(int dim) const {
-    return dim ? gridDim.y * blockDim.y : gridDim.x * blockDim.x;
-  }
-
-  __device__ range<2> get_local_range() const {
-    return {blockDim.x, blockDim.y};
-  }
-  __device__ size_t get_local_range(int dim) const {
-    return dim ? blockDim.y : blockDim.x;
-  }
-
-  [[deprecated]] __device__ id<2> get_offset() const { return offset_; }
-
-  __device__ nd_range<2> get_nd_range() const {
-    return {get_global_range(), get_local_range(), offset_};
-  }
-};
-
-#else //  __NVCOMPILER
+} // namespace detail
 
 // Section 4.9.1.5 nd_item class
 template <int dims>
@@ -1218,7 +1091,6 @@ class nd_item
 
   nd_item() = default; // should be = delete, but ok as private
 
-  // debug
   template <int d>
   friend nd_item<d> detail::mk_nd_item(const id<d>&, const nd_range<d>&);
 
@@ -1274,7 +1146,11 @@ public:
   nd_range<dims> get_nd_range() const { return nd_range_; }
 };
 
+} // namespace sycl
+
 #endif // __NVCOMPILER
+
+namespace sycl {
 
 // Section 4.7.6.1 Access targets
 enum class target {
