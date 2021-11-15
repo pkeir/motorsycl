@@ -6,8 +6,23 @@
 #define __MOTORSYCL__
 #define SYCL_LANGUAGE_VERSION 202001
 
+namespace sycl
+{
+
+class device;
+class context;
+class exception_list;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
+template <int = 1, bool with_offset = true> class item;
+template <int = 1> class nd_item;
+template <typename, int> class vec;
+
+} // namespace sycl
+
 #include "sycl/detail/zip_with.hpp"
-#include "sycl/detail/sycl-forward-declarations.hpp"
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
 #include <type_traits>  // std::remove_const_t
@@ -26,8 +41,6 @@
 #include <bit>          // std::bit_cast
 #include <exception>    // std::exception_ptr
 #include <system_error> // std::is_error_condition_enum
-
-#include "sycl/detail/iterq.hpp"
 
 namespace sycl {
 
@@ -899,9 +912,6 @@ class item
   id<dims> offset_;
 
   template <int, bool> friend class item;
-  template <typename> friend class detail::iter;
-  // To access default ctor at two iterq ctors: using T{i,r} & T{i,r,p}:
-  template <typename T, bool> friend class detail::iterq;
 
   template <size_t, int dims_, bool with_offset_>
   friend auto& get(item<dims_, with_offset_>&);
@@ -948,9 +958,6 @@ class item<dims,false>
 {
   id<dims> id_;
   range<dims> range_;
-
-  template <typename> friend class detail::iter;
-  template <typename T, bool> friend class detail::iterq;
 
   template <size_t, int dims_, bool with_offset_>
   friend auto& get(item<dims_, with_offset_>&);
@@ -1033,8 +1040,6 @@ class nd_range
   range<dims> local_range_;
   id<dims> offset_;
 
-  template <typename> friend class detail::iter;
-
 public:
 
   nd_range() = default;
@@ -1060,19 +1065,13 @@ public:
 
 } // namespace sycl
 
-#ifdef __NVCOMPILER
-
-#include "sycl/detail/cuda/nd_item.hpp"
-
-#else // __NVCOMPILER
-
 namespace sycl {
 
 namespace detail {
 
 template <int dims>
 nd_item<dims>
-mk_nd_item(const id<dims>& i, const nd_range<dims>& r) { return {i,r}; }
+mk_nd_item(const id<dims>& offset) { return {offset}; }
 
 } // namespace detail
 
@@ -1080,77 +1079,49 @@ mk_nd_item(const id<dims>& i, const nd_range<dims>& r) { return {i,r}; }
 template <int dims>
 class nd_item
 {
-  id<dims> id_;
-  nd_range<dims> nd_range_;
+  id<dims> offset_;
 
-  template <size_t, int d> friend auto& get(nd_item<d>&);
-  template <size_t, int d> friend const auto& get(const nd_item<d>&);
-
-  template <typename> friend class detail::iter;
-  template <typename T, bool> friend class detail::iterq;
-
-  nd_item() = default; // should be = delete, but ok as private
-
+  nd_item(const id<dims>& offset) : offset_{offset} {}
   template <int d>
-  friend nd_item<d> detail::mk_nd_item(const id<d>&, const nd_range<d>&);
-
-  // friend class handler;
+  friend nd_item<d> detail::mk_nd_item(const id<d>&);
 
 public:
 
-  // debug only
-  nd_item(id<dims> i, nd_range<dims> ndr) : id_{i}, nd_range_{ndr} {}
-
-  id<dims> get_global_id() const { return id_; }
-  size_t get_global_id(int dim) const { return id_[dim]; }
-  size_t get_global_linear_id() const
-  {
-    const auto& r = nd_range_.get_global_range();
-         if constexpr (dims==1) return id_[0];
-    else if constexpr (dims==2) return id_[1] + id_[0]*r[1];
-    else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
-  }
-  id<dims> get_local_id() const {
-    using detail::zip_with;
-    return zip_with<id<dims>>(std::modulus{},id_,nd_range_.get_local_range());
-  }
-
-  size_t get_local_id(int dim) const {
-    return id_[dim] % nd_range_.get_local_range()[dim];
-  }
-
-  size_t get_local_linear_id() const { assert(0); return {}; }
-
-  group<dims> get_group() const {
-    assert(0);
-    return {};
-    // detail::zip_with<group<dims>>(std::divides{},id_,nd_range_.get_local_range());
-  }
-
-  size_t get_group(int dim) const { assert(0); return {}; }
-
-  size_t get_group_linear_id() const { assert(0); return {}; }
-
-  range<dims> get_group_range() const { assert(0); return {}; }
-
-  size_t get_group_range(int dim) const { assert(0); return {}; }
-
-  range<dims> get_global_range() const { return nd_range_.get_global_range(); }
-  size_t get_global_range(int dim) const { return get_global_range()[dim]; }
-
-  range<dims> get_local_range() const { return nd_range_.get_local_range(); }
-  size_t get_local_range(int dim) const { return get_local_range()[dim]; }
-
-  [[deprecated]] id<dims> get_offset() const { return nd_range_.get_offset(); }
-
-  nd_range<dims> get_nd_range() const { return nd_range_; }
+  id<dims>                get_global_id() const
+  { assert(0); return {}; }
+  size_t                  get_global_id(int) const
+  { assert(0); return {}; }
+  size_t                  get_global_linear_id() const
+  { assert(0); return {}; }
+  id<dims>                get_local_id() const
+  { assert(0); return {}; }
+  size_t                  get_local_id(int) const
+  { assert(0); return {}; }
+  size_t                  get_local_linear_id() const
+  { assert(0); return {}; }
+  group<dims>             get_group() const
+  { assert(0); return {}; }
+  size_t                  get_group(int) const
+  { assert(0); return {}; }
+  size_t                  get_group_linear_id() const
+  { assert(0); return {}; }
+  range<dims>             get_group_range() const
+  { assert(0); return {}; }
+  size_t                  get_group_range(int) const
+  { assert(0); return {}; }
+  range<dims>             get_global_range() const
+  { assert(0); return {}; }
+  size_t                  get_global_range(int) const
+  { assert(0); return {}; }
+  range<dims>             get_local_range() const
+  { assert(0); return {}; }
+  size_t                  get_local_range(int) const
+  { assert(0); return {}; }
+  [[deprecated]] id<dims> get_offset() const
+  { assert(0); return {}; }
+  nd_range<dims>          get_nd_range() const
+  { assert(0); return {}; }
 };
-
-} // namespace sycl
-
-#endif // __NVCOMPILER
-
-namespace sycl {
 
 // Section 4.7.6.1 Access targets
 enum class target {
@@ -2101,28 +2072,16 @@ public:
     return {};
   }
 
-  void wait()
-  {
-    while (!stdq_.empty())
-    {
-      auto e = stdq_.front();
-      e();
-      stdq_.pop();
-    }
-  }
+  void wait() { cudaStreamSynchronize(stream_); }
 
   template <typename T>
-  event submit(T cgf)
-  {
-    cgf(h_);
-    return {};
-  }
+  event submit(T cgf) { cgf(h_); return {}; }
 
 private:
   handler h_{*this};
   device dev_;
   context context_;
-  std::queue<std::function<void()>> stdq_;
+  cudaStream_t stream_;
 };
 
 namespace detail {
@@ -2194,11 +2153,7 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
 {
   std::cout << "Ok\n";
 
-  auto f = [=]() {
-    detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
-    cudaDeviceSynchronize(); // for now
-  };
-  q_.stdq_.push(f);
+  detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
 }
 
 #else
