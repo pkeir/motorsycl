@@ -79,7 +79,7 @@ bool basic_nd_item_type()
   sycl::range<2> l1{4,2};
   sycl::nd_range<2> nd{g1,l1};
 
-  sycl::nd_item<2> i{sycl::id<2>{6,3},nd}; // no such constructor exists
+  auto i = sycl::detail::mk_nd_item<2>(sycl::id<2>{6,3},nd);
   bool b = sycl::id<2>{6,3}==i.get_global_id();
   b = b && sycl::id<2>{2,1}==i.get_local_id();
   b = b && 2==i.get_local_id(0) && 1==i.get_local_id(1);
