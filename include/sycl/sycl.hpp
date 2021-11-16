@@ -22,6 +22,7 @@ template <typename, int> class vec;
 
 } // namespace sycl
 
+#include "pgi_global_linear_id.hpp"
 #include "sycl/detail/zip_with.hpp"
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
@@ -1091,8 +1092,9 @@ public:
   { assert(0); return {}; }
   size_t                  get_global_id(int) const
   { assert(0); return {}; }
-  size_t                  get_global_linear_id() const
-  { assert(0); return {}; }
+  size_t                  get_global_linear_id() const {
+    return pgi_global_linear_id<dims>();
+  }
   id<dims>                get_local_id() const
   { assert(0); return {}; }
   size_t                  get_local_id(int) const
@@ -2081,7 +2083,7 @@ private:
   handler h_{*this};
   device dev_;
   context context_;
-  cudaStream_t stream_;
+  cudaStream_t stream_{0};
 };
 
 namespace detail {
@@ -2098,6 +2100,9 @@ template <typename T, T x, T... xs>
 auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
   return id<1+sizeof...(xs)>{r0+o[0],o[xs]...};
 }
+
+template <typename U, typename A, typename T, T... Is>
+inline U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
 
 #ifdef __NVCOMPILER
 template <int dims, typename K>
@@ -2151,8 +2156,17 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
 template <int dims, typename K>
 void handler::parallel_for(nd_range<dims> r, const K& k)
 {
-  std::cout << "Ok\n";
+/*  dim3 nblocks = r.get_group_range();
+  dim3 nthreads = r.get_local_range();
+  dim3 global = r.get_global_range();
+*/
+  std::cout << "Ok:\n";
+  static const auto is = std::make_index_sequence<dims>{};
+  const dim3 nblocks  = detail::repack<dim3>(r.get_group_range(), is);
+  const dim3 nthreads = detail::repack<dim3>(r.get_local_range(), is);
+  const dim3 global   = detail::repack<dim3>(r.get_global_range(), is);
 
+//  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
   detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
 }
 
