@@ -22,7 +22,7 @@ template <typename, int> class vec;
 
 } // namespace sycl
 
-#include "pgi_global_linear_id.hpp"
+#include "sycl/detail/pgi.hpp"
 #include "sycl/detail/zip_with.hpp"
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
@@ -1088,12 +1088,34 @@ class nd_item
 
 public:
 
-  id<dims>                get_global_id() const
-  { assert(0); return {}; }
+  id<dims>                get_global_id() const requires(dims==1) {
+    return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X};
+  }
+  id<dims>                get_global_id() const requires(dims==2) {
+    return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X,
+            _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y};
+  }
+  id<dims>                get_global_id() const requires(dims==3) {
+    return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X,
+            _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y,
+            _BLOCKIDX_Z * _BLOCKDIM_Z + _THREADIDX_Z};
+  }
   size_t                  get_global_id(int) const
   { assert(0); return {}; }
-  size_t                  get_global_linear_id() const {
-    return pgi_global_linear_id<dims>();
+  // Section 3.11.1 Linearization
+  // ...also C.7.7. OpenCL kernel conventions and SYCL
+  size_t                  get_global_linear_id() const requires(dims==1) {
+    return get_global_id(0);
+  }
+  size_t                  get_global_linear_id() const requires(dims==2) {
+    const auto& [id0,id1] = get_global_id();
+    const auto& [  _, r1] = get_global_range();
+    return id1 + (id0 * r1);
+  }
+  size_t                  get_global_linear_id() const requires(dims==3) {
+    const auto& [id0,id1,id2] = get_global_id();
+    const auto& [  _, r1, r2] = get_global_range();
+    return id2 + (id1 * r2) + (id0 * r1 * r2);
   }
   id<dims>                get_local_id() const
   { assert(0); return {}; }
@@ -1111,8 +1133,18 @@ public:
   { assert(0); return {}; }
   size_t                  get_group_range(int) const
   { assert(0); return {}; }
-  range<dims>             get_global_range() const
-  { assert(0); return {}; }
+  range<dims>             get_global_range() const requires(dims==1) {
+    return {_GRIDDIM_X * _BLOCKDIM_X};
+  }
+  range<dims>             get_global_range() const requires(dims==2) {
+    return {_GRIDDIM_X * _BLOCKDIM_X,
+            _GRIDDIM_Y * _BLOCKDIM_Y};
+  }
+  range<dims>             get_global_range() const requires(dims==3) {
+    return {_GRIDDIM_X * _BLOCKDIM_X,
+            _GRIDDIM_Y * _BLOCKDIM_Y,
+            _GRIDDIM_Z * _BLOCKDIM_Z};
+  }
   size_t                  get_global_range(int) const
   { assert(0); return {}; }
   range<dims>             get_local_range() const
@@ -2114,9 +2146,9 @@ __global__ void cuda_kernel_launch(const K& k)
   const range<2> lr{1, 1};
 //  const nd_item<dims> i{gr,lr};
   const auto i = detail::mk_nd_item(id<dims>{0,0}, nd_range<dims>{gr,lr});
-  threadIdx.x;
-  threadIdx.y;
-  threadIdx.z;
+  _THREADIDX_X;
+  _THREADIDX_Y;
+  _THREADIDX_Z;
   k(i);
 */
 }
