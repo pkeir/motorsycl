@@ -1108,9 +1108,9 @@ public:
     return get_global_id(0);
   }
   size_t                  get_global_linear_id() const requires(dims==2) {
-    const auto& [id0,id1] = get_global_id();
-    const auto& [  _, r1] = get_global_range();
-    return id1 + (id0 * r1);
+    const auto id = get_global_id();
+    const auto  r = get_global_range();
+    return id[1] + (id[0] * r[1]);
   }
   size_t                  get_global_linear_id() const requires(dims==3) {
     const auto& [id0,id1,id2] = get_global_id();
