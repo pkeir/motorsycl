@@ -22,6 +22,7 @@ bool simple_2d_nd_range()
 
     q.submit([&](handler& cgh)
     {
+      //sycl::stream os(1024, 256, cgh);
       range<2> gr{gh, gw};
       range<2> lr{lh, lw};
 #if defined(__MOTORSYCL__) || defined(__SYCL_COMPILER_VERSION)
@@ -32,6 +33,8 @@ bool simple_2d_nd_range()
       cgh.parallel_for<Foo>(nd_range<2>{gr,lr}, [=](nd_item<2> i) {
 #endif
         std::size_t linear_id = i.get_global_linear_id();
+//        printf("%i\n", linear_id);
+        //os << linear_id << '\n';
         id<2> global_id = i.get_global_id();
         std::size_t d0 = i.get_global_id(0);
         std::size_t d1 = i.get_global_id(1);
@@ -52,7 +55,10 @@ bool simple_2d_nd_range()
 
   bool b = true;
   for (std::size_t i = 0; i < sz; ++i)
+{
+  std::cerr << bdata[i] << ' ';
     b = b && bdata[i];
+}
   delete [] bdata;
   return b;
 }

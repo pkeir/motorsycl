@@ -1100,8 +1100,21 @@ public:
             _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y,
             _BLOCKIDX_Z * _BLOCKDIM_Z + _THREADIDX_Z};
   }
-  size_t                  get_global_id(int) const
-  { assert(0); return {}; }
+  size_t                  get_global_id(int  ) const requires(dims==1)
+  {
+    return _BLOCKiDX_X * _BLOCKDIM_X + _THREADIDX_X;
+  }
+  size_t                  get_global_id(int i) const requires(dims==2)
+  {
+    return i ? _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y
+             : _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+  }
+  size_t                  get_global_id(int i) const requires(dims==3)
+  {
+     return i ? (i==2 ? _BLOCKIDX_Z * _BLOCKDIM_Z + _THREADIDX_Z
+                      : _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y)
+                      : _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+  }
   // Section 3.11.1 Linearization
   // ...also C.7.7. OpenCL kernel conventions and SYCL
   size_t                  get_global_linear_id() const requires(dims==1) {
@@ -1113,9 +1126,9 @@ public:
     return id[1] + (id[0] * r[1]);
   }
   size_t                  get_global_linear_id() const requires(dims==3) {
-    const auto& [id0,id1,id2] = get_global_id();
-    const auto& [  _, r1, r2] = get_global_range();
-    return id2 + (id1 * r2) + (id0 * r1 * r2);
+    const auto id = get_global_id();
+    const auto  r = get_global_range();
+    return id[2] + (id[1] * r[2]) + (id[0] * r[1] * r[2]);
   }
   id<dims>                get_local_id() const
   { assert(0); return {}; }
@@ -2106,7 +2119,7 @@ public:
     return {};
   }
 
-  void wait() { cudaStreamSynchronize(stream_); }
+  void wait() { cudaStreamSynchronize(0); }
 
   template <typename T>
   event submit(T cgf) { cgf(h_); return {}; }
@@ -2115,7 +2128,6 @@ private:
   handler h_{*this};
   device dev_;
   context context_;
-  cudaStream_t stream_{0};
 };
 
 namespace detail {
@@ -2198,8 +2210,8 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
   const dim3 nthreads = detail::repack<dim3>(r.get_local_range(), is);
   const dim3 global   = detail::repack<dim3>(r.get_global_range(), is);
 
-//  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
-  detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
+  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
+//  detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
 }
 
 #else
@@ -2303,23 +2315,25 @@ public:
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
     : range_{r}
   {
-    cudaPointerAttributes attr;
-    assert(cudaSuccess == cudaPointerGetAttributes(&attr, hostData));
-    if (attr.type != cudaMemoryTypeManaged) {
-      std::cerr << "Warning: buffer ctor was passed an unmanaged pointer.\n";
-      data_ = alloc_.allocate(r.size());
-//      data_.reset(alloc_.allocate(r.size()),
+    const bool well_aligned = true;
+    const bool use_host_ptr = true;
+    if (!well_aligned && !use_host_ptr) {
+      std::cerr << "Warning: misaligned host data passed to buffer.\n";
+      h_data_ = alloc_.allocate(r.size()); // ensure well aligned
+//      h_data_.reset(alloc_.allocate(r.size()),
 //                  [this](auto* p){ alloc_.deallocate(p, range_.size()); });
-      stack_ = hostData;
-      std::copy_n(stack_, r.size(), data_);
+      h_user_data_ = hostData;
+      std::copy_n(h_user_data_, r.size(), h_data_);
       delete_ = true;
-//      std::copy_n(stack_, r.size(), data_.get());
+//      std::copy_n(h_data_internal_, r.size(), data_.get());
     }
     else {
-      data_ = hostData;
+      h_data_ = hostData;
       delete_ = false;
 //      data_.reset(hostData,[](auto){});
     }
+
+    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
    }
 #else
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
@@ -2394,15 +2408,16 @@ public:
   { assert(0); }
 
   ~buffer() {
-    if (pq_) pq_->wait(); // This only works in this implementation. Revise.
-#ifdef __NVCOMPILER
-    if (stack_) {
-      std::copy_n(data_, range_.size(), stack_);
-//      alloc_.deallocate(stack_, range_.size()); // why?
-//      std::copy_n(data_.get(), range_.size(), stack_);
+    if (pq_) {
+      cudaMemcpy(h_data_, d_data_, range_.size(), cudaMemcpyDeviceToHost);
+      pq_->wait(); // Refine: wait only if a kernel writes to the buffer
     }
-    if (delete_) alloc_.deallocate(data_, range_.size());
-#endif
+    if (h_user_data_) {
+      std::copy_n(h_data_, range_.size(), h_user_data_);
+//      alloc_.deallocate(h_data_internal_, range_.size()); // why?
+//      std::copy_n(data_.get(), range_.size(), h_data_internal_);
+    }
+    if (delete_) alloc_.deallocate(h_data_, range_.size());
   }
 
   range<dims> get_range() const { return range_; }
@@ -2481,7 +2496,8 @@ private:
   const range<dims> range_{};
   queue* pq_{};
 #ifdef __NVCOMPILER
-  T* data_{}, *stack_{};
+  T* h_data_{}, *h_user_data_{};
+  T* d_data_{};
   bool delete_;
 #else
   std::shared_ptr<T[]> data_{};
@@ -2618,13 +2634,25 @@ public:
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            const property_list &ps = {})
-    : data_{buf.data_}, range_{buf.range_}, offset_{} { buf.pq_ = &cgh.q_; }
+    : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
+  {
+    if (!d_data_)
+      cudaMemcpyAsync(d_data_,buf.h_data_,
+                      range_.size(), cudaMemcpyHostToDevice, 0);
+    buf.pq_ = &cgh.q_;
+  }
 
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
            const property_list &ps = {})
-    : data_{buf.data_}, range_{buf.range_}, offset_{} { buf.pq_ = &cgh.q_; }
+    : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
+  {
+//    if (!d_data_)  // ensure data is copied only once
+      cudaMemcpyAsync(d_data_, buf.h_data_,
+                      range_.size(), cudaMemcpyHostToDevice, 0);
+    buf.pq_ = &cgh.q_;
+  }
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -2720,22 +2748,18 @@ public:
   /* Available only when: (dims > 0) */
   template <int D>
   reference operator[](id<D> i) const
-  { return data_[detail::linear_offset(i+offset_,range_)]; }
+  { return d_data_[detail::linear_offset(i+offset_,range_)]; }
 
   template <int d = dims>
   std::enable_if_t<(d==1), reference>
-  operator[](size_t i) const { return data_[i+offset_[0]]; }
+  operator[](size_t i) const { returnd_ data_[i+offset_[0]]; }
 
   /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   template <int d = dims>
   std::enable_if_t<(d==2), const detail::indexer<dataT, dims-1, accessmode>>
   operator[](size_t index) const {
-#ifdef __NVCOMPILER
-    return {data_ + range_[1] * index, {range_[1]}};
-#else
-    return {{data_, data_.get() + range_[1] * index}, {range_[1]}};
-#endif
+    return {d_data_ + range_[1] * index, {range_[1]}};
   }
 
   template <int d = dims>
@@ -2759,11 +2783,7 @@ public:
   //  id<dimensions> index) const;
 
   std::add_pointer_t<value_type> get_pointer() const noexcept {
-#ifdef __NVCOMPILER
-    return data_;
-#else
-    return data_.get();
-#endif
+  return d_data_;
   }
 
   //template <access::decorated IsDecorated>
@@ -2780,11 +2800,7 @@ public:
   const_reverse_iterator crend() const noexcept;
   */
 
-#ifdef __NVCOMPILER
-  dataT* data_{};
-#else
-  std::shared_ptr<dataT[]> data_;
-#endif
+  dataT* d_data_{};
   const range<dims> range_;
   const id<dims> offset_;
 };
