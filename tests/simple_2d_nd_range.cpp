@@ -22,7 +22,6 @@ bool simple_2d_nd_range()
 
     q.submit([&](handler& cgh)
     {
-      //sycl::stream os(1024, 256, cgh);
       range<2> gr{gh, gw};
       range<2> lr{lh, lw};
 #if defined(__MOTORSYCL__) || defined(__SYCL_COMPILER_VERSION)
@@ -33,11 +32,9 @@ bool simple_2d_nd_range()
       cgh.parallel_for<Foo>(nd_range<2>{gr,lr}, [=](nd_item<2> i) {
 #endif
         std::size_t linear_id = i.get_global_linear_id();
-//        printf("%i\n", linear_id);
-        //os << linear_id << '\n';
         id<2> global_id = i.get_global_id();
-        std::size_t d0 = i.get_global_id(0);
-        std::size_t d1 = i.get_global_id(1);
+        std::size_t  d0 = i.get_global_id(0);
+        std::size_t  d1 = i.get_global_id(1);
 #if defined(TRISYCL_CL_LANGUAGE_VERSION)
         bool b1 = d1*gw + d0 == linear_id;
 #else
@@ -55,10 +52,8 @@ bool simple_2d_nd_range()
 
   bool b = true;
   for (std::size_t i = 0; i < sz; ++i)
-{
-  std::cerr << bdata[i] << ' ';
     b = b && bdata[i];
-}
+
   delete [] bdata;
   return b;
 }
@@ -82,7 +77,6 @@ bool basic_nd_range_type()
   return b && b2;
 }
 
-#ifdef __MOTORSYCL__
 bool basic_nd_item_type(const sycl::nd_item<2>& i)
 {
   if (i.get_global_id() != sycl::id<2>{6,3}) return true;
@@ -90,24 +84,19 @@ bool basic_nd_item_type(const sycl::nd_item<2>& i)
   sycl::range<2> l1{4,2};
   sycl::nd_range<2> nd{g1,l1};
 
-//  sycl::nd_item<2> i = sycl::detail::mk_nd_item(sycl::id<2>{6,3},nd);
   bool b = sycl::id<2>{6,3}==i.get_global_id();
   b = b && sycl::id<2>{2,1}==i.get_local_id();
   b = b && 2==i.get_local_id(0) && 1==i.get_local_id(1);
-  b = b && sycl::id<2>{12,4}==i.get_global_range();
-  b = b && 12==i.get_global_range(0) && 4==i.get_global_range(1);
+  b = b && sycl::id<2>{8,4}==i.get_global_range();
+  b = b && 8==i.get_global_range(0) && 4==i.get_global_range(1);
   b = b && sycl::id<2>{4,2}==i.get_local_range();
   b = b && 4==i.get_local_range(0) && 2==i.get_local_range(1);
   return b;
 }
-#endif // __MOTORSYCL__
 
 int main(int argc, char *argv[])
 {
   assert(basic_nd_range_type());
-#if defined(__MOTORSYCL__)
-//  assert(basic_nd_item_type());
-#endif
   assert(simple_2d_nd_range());
   return 0;
 }

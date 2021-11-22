@@ -19,11 +19,13 @@ template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
 template <int = 1, bool with_offset = true> class item;
 template <int = 1> class nd_item;
 template <typename, int> class vec;
+enum class aspect;
 
 } // namespace sycl
 
 #include "sycl/detail/pgi.hpp"
 #include "sycl/detail/zip_with.hpp"
+#include <cuda_runtime.h>
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
 #include <type_traits>  // std::remove_const_t
@@ -357,6 +359,23 @@ public:
     assert(dt==info::device_type::all);
     return devices_;
   }
+
+  template <typename Param>
+  typename Param::return_type get_info() const
+  { assert(0); return {}; }
+
+  template <typename Param>
+  typename Param::return_type get_backend_info() const
+  { assert(0); return {}; }
+
+  bool has(aspect asp) const
+  { assert(0); return {}; }
+
+  bool has_extension(const std::string &extension) const // Deprecated
+  { assert(0); return {}; }
+
+  static std::vector<platform> get_platforms()
+  { assert(0); return {}; }
 
 private:
   backend backend_;
@@ -1088,21 +1107,24 @@ class nd_item
 
 public:
 
-  id<dims>                get_global_id() const requires(dims==1) {
+  id<dims>                get_global_id() const requires(dims==1)
+  {
     return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X};
   }
-  id<dims>                get_global_id() const requires(dims==2) {
+  id<dims>                get_global_id() const requires(dims==2)
+  {
     return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X,
             _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y};
   }
-  id<dims>                get_global_id() const requires(dims==3) {
+  id<dims>                get_global_id() const requires(dims==3)
+  {
     return {_BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X,
             _BLOCKIDX_Y * _BLOCKDIM_Y + _THREADIDX_Y,
             _BLOCKIDX_Z * _BLOCKDIM_Z + _THREADIDX_Z};
   }
   size_t                  get_global_id(int  ) const requires(dims==1)
   {
-    return _BLOCKiDX_X * _BLOCKDIM_X + _THREADIDX_X;
+    return _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
   }
   size_t                  get_global_id(int i) const requires(dims==2)
   {
@@ -1130,10 +1152,30 @@ public:
     const auto  r = get_global_range();
     return id[2] + (id[1] * r[2]) + (id[0] * r[1] * r[2]);
   }
-  id<dims>                get_local_id() const
-  { assert(0); return {}; }
-  size_t                  get_local_id(int) const
-  { assert(0); return {}; }
+  id<dims>                get_local_id() const requires(dims==1)
+  {
+    return {_THREADIDX_X};
+  }
+  id<dims>                get_local_id() const requires(dims==2)
+  {
+    return {_THREADIDX_X, _THREADIDX_Y};
+  }
+  id<dims>                get_local_id() const requires(dims==3)
+  {
+    return {_THREADIDX_X, _THREADIDX_Y, _THREADIDX_Z};
+  }
+  size_t                  get_local_id(int ) const requires(dims==1)
+  {
+    return _THREADIDX_X;
+  }
+  size_t                  get_local_id(int i) const requires(dims==2)
+  {
+    return i ? _THREADIDX_Y : _THREADIDX_X;
+  }
+  size_t                  get_local_id(int i) const requires(dims==3)
+  {
+     return i ? (i==2 ? _THREADIDX_Z : _THREADIDX_Y) : _THREADIDX_X;
+  }
   size_t                  get_local_linear_id() const
   { assert(0); return {}; }
   group<dims>             get_group() const
@@ -1146,28 +1188,62 @@ public:
   { assert(0); return {}; }
   size_t                  get_group_range(int) const
   { assert(0); return {}; }
-  range<dims>             get_global_range() const requires(dims==1) {
+
+  range<dims>             get_global_range() const requires(dims==1)
+  {
     return {_GRIDDIM_X * _BLOCKDIM_X};
   }
-  range<dims>             get_global_range() const requires(dims==2) {
+  range<dims>             get_global_range() const requires(dims==2)
+  {
     return {_GRIDDIM_X * _BLOCKDIM_X,
             _GRIDDIM_Y * _BLOCKDIM_Y};
   }
-  range<dims>             get_global_range() const requires(dims==3) {
+  range<dims>             get_global_range() const requires(dims==3)
+  {
     return {_GRIDDIM_X * _BLOCKDIM_X,
             _GRIDDIM_Y * _BLOCKDIM_Y,
             _GRIDDIM_Z * _BLOCKDIM_Z};
   }
-  size_t                  get_global_range(int) const
-  { assert(0); return {}; }
-  range<dims>             get_local_range() const
-  { assert(0); return {}; }
-  size_t                  get_local_range(int) const
-  { assert(0); return {}; }
+
+  size_t                  get_global_range(int  ) const requires(dims==1)
+  {
+    return _GRIDDIM_X * _BLOCKDIM_X;
+  }
+  size_t                  get_global_range(int i) const requires(dims==2)
+  {
+    return i ? _GRIDDIM_Y * _BLOCKDIM_Y
+             : _GRIDDIM_X * _BLOCKDIM_X;
+  }
+  size_t                  get_global_range(int i) const requires(dims==3)
+  {
+    return i ? (i==2 ? _GRIDDIM_Z * _BLOCKDIM_Z
+                     : _GRIDDIM_Y * _BLOCKDIM_Y)
+                     : _GRIDDIM_X * _BLOCKDIM_X;
+  }
+
+  range<dims>             get_local_range() const requires (dims==1)
+  { return {_BLOCKDIM_X}; }
+
+  range<dims>             get_local_range() const requires (dims==2)
+  { return {_BLOCKDIM_X, _BLOCKDIM_Y}; }
+
+  range<dims>             get_local_range() const requires (dims==3)
+  { return {_BLOCKDIM_X, _BLOCKDIM_Y, _BLOCKDIM_Z}; }
+
+  size_t                  get_local_range(int  ) const requires (dims==1)
+  { return _BLOCKDIM_X; }
+
+  size_t                  get_local_range(int i) const requires (dims==2)
+  { return i ? _BLOCKDIM_Y : _BLOCKDIM_X; }
+
+  size_t                  get_local_range(int i) const requires (dims==3)
+  { return i ? (i==2 ? _BLOCKDIM_Z : _BLOCKDIM_Y) : _BLOCKDIM_X; }
+
   [[deprecated]] id<dims> get_offset() const
-  { assert(0); return {}; }
+  { return offset_; }
+
   nd_range<dims>          get_nd_range() const
-  { assert(0); return {}; }
+  { return {get_global_range(), get_local_range()}; }
 };
 
 // Section 4.7.6.1 Access targets
@@ -1995,7 +2071,7 @@ public:
   void parallel_for(range<dims>, id<dims>, const K&);
 };
 
-// Section 4.6.5.1 Queue interface
+// Section 4.6.5 Queue interface
 // All constructors will implicitly construct a SYCL platform, device
 // and context in order to facilitate the construction of the queue.
 class queue {
@@ -2122,7 +2198,10 @@ public:
   void wait() { cudaStreamSynchronize(0); }
 
   template <typename T>
-  event submit(T cgf) { cgf(h_); return {}; }
+  event submit(T cgf) {
+    cgf(h_);
+    return {};
+  }
 
 private:
   handler h_{*this};
@@ -2148,23 +2227,15 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
 template <typename U, typename A, typename T, T... Is>
 inline U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
 
-#ifdef __NVCOMPILER
 template <int dims, typename K>
-__global__ void cuda_kernel_launch(const K& k)
+__global__ void cuda_kernel_launch(const K k)
 {
-  k(mk_nd_item(id<2>{0,0}));
-/*  if constexpr (1==dims) { k(detail::mk_nd_item( // flatten
-  const range<2> gr{1, 1};
-  const range<2> lr{1, 1};
-//  const nd_item<dims> i{gr,lr};
-  const auto i = detail::mk_nd_item(id<dims>{0,0}, nd_range<dims>{gr,lr});
-  _THREADIDX_X;
-  _THREADIDX_Y;
-  _THREADIDX_Z;
-  k(i);
-*/
+  if constexpr (dims==1) {
+    k(mk_nd_item(id<1>{0}));
+  } else {
+    k(mk_nd_item(id<2>{0,0}));
+  }
 }
-#endif // __NVCOMPILER
 
 } // namespace detail
 
@@ -2200,18 +2271,12 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
 template <int dims, typename K>
 void handler::parallel_for(nd_range<dims> r, const K& k)
 {
-/*  dim3 nblocks = r.get_group_range();
-  dim3 nthreads = r.get_local_range();
-  dim3 global = r.get_global_range();
-*/
-  std::cout << "Ok:\n";
   static const auto is = std::make_index_sequence<dims>{};
   const dim3 nblocks  = detail::repack<dim3>(r.get_group_range(), is);
   const dim3 nthreads = detail::repack<dim3>(r.get_local_range(), is);
   const dim3 global   = detail::repack<dim3>(r.get_global_range(), is);
 
   detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
-//  detail::cuda_kernel_launch<dims,K><<<1,1>>>(k);
 }
 
 #else
@@ -2333,7 +2398,8 @@ public:
 //      data_.reset(hostData,[](auto){});
     }
 
-    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
+//    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
+    cudaMalloc(&d_data_, r.size() * sizeof(T));
    }
 #else
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
@@ -2409,7 +2475,7 @@ public:
 
   ~buffer() {
     if (pq_) {
-      cudaMemcpy(h_data_, d_data_, range_.size(), cudaMemcpyDeviceToHost);
+      cudaMemcpy(h_data_, d_data_, range_.size() * sizeof(T), cudaMemcpyDeviceToHost);
       pq_->wait(); // Refine: wait only if a kernel writes to the buffer
     }
     if (h_user_data_) {
@@ -2636,9 +2702,10 @@ public:
            const property_list &ps = {})
     : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
   {
-    if (!d_data_)
-      cudaMemcpyAsync(d_data_,buf.h_data_,
-                      range_.size(), cudaMemcpyHostToDevice, 0);
+//    if (d_data_)
+//      cudaMemcpyAsync(d_data_,buf.h_data_,
+//                      range_.size(), cudaMemcpyHostToDevice, 0);
+    cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
     buf.pq_ = &cgh.q_;
   }
 
@@ -2649,8 +2716,9 @@ public:
     : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
   {
 //    if (!d_data_)  // ensure data is copied only once
-      cudaMemcpyAsync(d_data_, buf.h_data_,
-                      range_.size(), cudaMemcpyHostToDevice, 0);
+//      cudaMemcpyAsync(d_data_, buf.h_data_,
+//                      range_.size(), cudaMemcpyHostToDevice, 0);
+    cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
     buf.pq_ = &cgh.q_;
   }
 
@@ -2752,7 +2820,9 @@ public:
 
   template <int d = dims>
   std::enable_if_t<(d==1), reference>
-  operator[](size_t i) const { returnd_ data_[i+offset_[0]]; }
+  operator[](size_t i) const {
+    return d_data_[i+offset_[0]];
+  }
 
   /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
