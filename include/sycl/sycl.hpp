@@ -861,8 +861,8 @@ public:
   { assert(0); return {}; }
   range<dims> get_max_local_range() const
   { assert(0); return {}; }
-  size_t operator[](int dimension) const
-  { assert(0); return {}; }
+//  size_t operator[](int dimension) const
+//  { assert(0); return {}; }
   size_t get_group_linear_id() const
   { assert(0); return {}; }
   size_t get_local_linear_id() const
@@ -1178,16 +1178,61 @@ public:
   }
   size_t                  get_local_linear_id() const
   { assert(0); return {}; }
-  group<dims>             get_group() const
-  { assert(0); return {}; }
-  size_t                  get_group(int) const
-  { assert(0); return {}; }
-  size_t                  get_group_linear_id() const
-  { assert(0); return {}; }
-  range<dims>             get_group_range() const
-  { assert(0); return {}; }
-  size_t                  get_group_range(int) const
-  { assert(0); return {}; }
+
+  group<dims>             get_group() const requires(dims==1)
+  { return {_BLOCKIDX_X}; }
+
+  group<dims>             get_group() const requires(dims==2)
+  { return {_BLOCKIDX_X, _BLOCKIDX_Y}; }
+
+  group<dims>             get_group() const requires(dims==3)
+  { return {_BLOCKIDX_X, _BLOCKIDX_Y, _BLOCKIDX_Z}; }
+
+  size_t                  get_group(int  ) const requires(dims==1)
+  { return _BLOCKIDX_X; }
+
+  size_t                  get_group(int i) const requires(dims==2)
+  { return i ? _BLOCKIDX_Y : _BLOCKIDX_X; }
+
+  size_t                  get_group(int i) const requires(dims==3)
+  { return i ? (i==2 ? _BLOCKIDX_Z : _BLOCKIDX_Y) : _BLOCKIDX_X; }
+
+  size_t                  get_group_linear_id() const requires(dims==1)
+  {
+    return get_group(0);
+  }
+
+  size_t                  get_group_linear_id() const requires(dims==2)
+  {
+    const auto  g = get_group();
+    const auto  r = get_group_range();
+    return g[1] + (g[0] * r[1]);
+  }
+
+  size_t                  get_group_linear_id() const requires(dims==3)
+  {
+    const auto  g = get_group();
+    const auto  r = get_group_range();
+    return g[2] + (g[1] * r[2]) + (g[0] * r[1] * r[2]);
+  }
+
+  range<dims>             get_group_range() const requires(dims==1)
+  { return {_GRIDDIM_X}; }
+
+  range<dims>             get_group_range() const requires(dims==2)
+  { return {_GRIDDIM_X, _GRIDDIM_Y}; }
+
+  range<dims>             get_group_range() const requires(dims==3)
+  { return {_GRIDDIM_X, _GRIDDIM_Y, _GRIDDIM_Z}; }
+
+  size_t                  get_group_range(int  ) const requires(dims==1)
+  { return _GRIDDIM_X; }
+
+  size_t                  get_group_range(int i) const requires(dims==2)
+  { return i ? _GRIDDIM_Y : _GRIDDIM_X; }
+
+  size_t                  get_group_range(int i) const requires(dims==3)
+  { return i ? (i==2 ? _GRIDDIM_Z : _GRIDDIM_Y) : _GRIDDIM_X; }
 
   range<dims>             get_global_range() const requires(dims==1)
   {

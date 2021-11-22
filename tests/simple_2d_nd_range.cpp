@@ -91,6 +91,10 @@ bool basic_nd_item_type(const sycl::nd_item<2>& i)
   b = b && 8==i.get_global_range(0) && 4==i.get_global_range(1);
   b = b && sycl::id<2>{4,2}==i.get_local_range();
   b = b && 4==i.get_local_range(0) && 2==i.get_local_range(1);
+  b = b && sycl::group<2>{1,1}==i.get_group();
+  b = b && 1==i.get_group(0) && 1==i.get_group(1);
+  b = b && sycl::group<2>{2,2}==i.get_group_range();
+  b = b && 3==i.get_group_linear_id();
   return b;
 }
 
