@@ -5,7 +5,6 @@ GXX=$MYGCC/bin/g++
 CLANG=$MYCLANG/bin/clang++
 INC="-I $MOTORSYCL_INCLUDE"
 COUNT=1
-#CUDA_10_1=/opt/nvidia/hpc_sdk_multi/Linux_x86_64/20.9/cuda/10.1 (now in env't)
 
 function doit()
 {
@@ -49,11 +48,11 @@ FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.
 
 # Intel's SYCL (DPCPP) -fsycl-unnamed-lambda is also useful (pre-2020-default)
 if [[ -v MYDPCPP ]]; then
-if [[ -v CUDA_10_1 ]]; then
-  TOKENSTRING="$MYDPCPP/bin/clang++ --cuda-path=$CUDA_10_1 -fsycl -fsycl-targets=nvptx64-nvidia-cuda-sycldevice -fsycl-unnamed-lambda %s"
+if [[ -v CUDA_10_2 ]]; then
+  TOKENSTRING="$MYDPCPP/bin/clang++ --cuda-path=$CUDA_10_2 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -fsycl-unnamed-lambda %s"
 else
   TOKENSTRING="$MYDPCPP/bin/clang++ -fsycl %s"
-fi # CUDA_10_1
+fi # CUDA_10_2
 doit
 fi # MYDPCPP
 
