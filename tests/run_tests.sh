@@ -60,7 +60,7 @@ FILES="maths.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp qw.cpp sim
 
 # Codeplay's ComputeCpp
 if [[ -v COMPUTECPP_DIR ]]; then
-  TOKENSTRING="$COMPUTECPP_DIR/bin/compute++ -O2 -mllvm -inline-threshold=1000 -Wno-unused-command-line-argument -sycl-driver -sycl-target spir64 -no-serial-memop -I $COMPUTECPP_DIR/include -std=c++17 -DSYCL_LANGUAGE_VERSION=202001 -L $COMPUTECPP_DIR/lib -lComputeCpp %s"
+  TOKENSTRING="$COMPUTECPP_DIR/bin/compute++ -O2 -mllvm -intelspirmetadata -inline-threshold=1000 -Wno-unused-command-line-argument -sycl-driver -sycl-target spir64 -no-serial-memop -I $COMPUTECPP_DIR/include -std=c++17 -DSYCL_LANGUAGE_VERSION=202001 -L $COMPUTECPP_DIR/lib -lComputeCpp %s"
   doit
 fi
 
