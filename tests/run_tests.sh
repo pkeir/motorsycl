@@ -68,7 +68,7 @@ FILES="maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp t
 
 # triSYCL using Clang
 if [[ -v TRISYCL_INCLUDE ]]; then
-  TOKENSTRING="clang++ -std=c++17 -I $TRISYCL_INCLUDE %s -pthread"
+  TOKENSTRING="clang++ -std=c++17 -I $TRISYCL_INCLUDE -I $MDSPAN_INCLUDE %s -pthread"
   doit
 fi
 

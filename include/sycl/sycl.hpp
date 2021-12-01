@@ -577,9 +577,20 @@ namespace sycl {
 // Section 4.6.6 Event class
 class event
 {
+  cudaEvent_t ce_;
 public:
 
-  event() = default;
+  event() { cudaEventCreateWithFlags(&ce_, cudaEventDisableTiming); }
+
+  // common reference semantics
+
+  event(const event&)            = default;
+  event(const event&&)           = default;
+  event& operator=(event&&)      = default;
+  event& operator=(const event&) = default;
+  ~event()                       = default;
+  friend bool operator==(const event &, const event &rhs) = default;
+  friend bool operator!=(const event &, const event &rhs) = default;
 
   void wait() { assert(0); }
 };
@@ -2082,6 +2093,8 @@ using decorated_private_ptr =
 class handler
 {
   queue& q_;
+  std::vector<event*> buffer_events_;
+  event kernel_event_;
 
   friend class queue; // ctor
   template <typename, int, access_mode, target, access::placeholder>
@@ -2243,13 +2256,17 @@ public:
   void wait() { cudaStreamSynchronize(0); }
 
   template <typename T>
-  event submit(T cgf) {
-    cgf(h_);
-    return {};
+  event submit(T cgf)
+  {
+    handler h{*this};
+    cgf(h);
+    std::cout << h.buffer_events_.size() << " accessors considered!\n";
+    for (event* p: h.buffer_events_)
+      *p = h.kernel_event_;
+    return h.kernel_event_;
   }
 
 private:
-  handler h_{*this};
   device dev_;
   context context_;
 };
@@ -2522,6 +2539,7 @@ public:
     if (pq_) {
       cudaMemcpy(h_data_, d_data_, range_.size() * sizeof(T), cudaMemcpyDeviceToHost);
       pq_->wait(); // Refine: wait only if a kernel writes to the buffer
+      event_;
     }
     if (h_user_data_) {
       std::copy_n(h_data_, range_.size(), h_user_data_);
@@ -2610,6 +2628,7 @@ private:
   T* h_data_{}, *h_user_data_{};
   T* d_data_{};
   bool delete_;
+  event event_{};
 #else
   std::shared_ptr<T[]> data_{};
 #endif
@@ -2751,6 +2770,7 @@ public:
 //      cudaMemcpyAsync(d_data_,buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
     cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
+    cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
 
@@ -2764,6 +2784,7 @@ public:
 //      cudaMemcpyAsync(d_data_, buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
     cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
+    cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
 
