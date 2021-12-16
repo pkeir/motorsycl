@@ -6,25 +6,6 @@
 #define __MOTORSYCL__
 #define SYCL_LANGUAGE_VERSION 202001
 
-namespace sycl
-{
-
-class device;
-class context;
-class exception_list;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
-template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
-template <int = 1, bool with_offset = true> class item;
-template <int = 1> class nd_item;
-template <typename, int> class vec;
-enum class aspect;
-
-} // namespace sycl
-
-#include "sycl/detail/pgi.hpp"
-#include "sycl/detail/zip_with.hpp"
 #include <cuda_runtime.h>
 #include <cstddef>      // std::size_t
 #include <memory>       // std::allocator
@@ -45,6 +26,32 @@ enum class aspect;
 #include <exception>    // std::exception_ptr
 #include <system_error> // std::is_error_condition_enum
 
+namespace sycl
+{
+
+class device;
+class context;
+class exception_list;
+template <typename T>
+using buffer_allocator = std::allocator<T>;
+template <
+  typename T,
+  int dims = 1,
+  typename AllocT = buffer_allocator<std::remove_const_t<T>>
+> requires(dims==1||dims==2||dims==3) class buffer;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
+template <int = 1, bool with_offset = true> class item;
+template <int = 1> class nd_item;
+template <typename, int> class vec;
+enum class aspect;
+
+} // namespace sycl
+
+#include "sycl/detail/pgi.hpp"
+#include "sycl/detail/zip_with.hpp"
 namespace sycl {
 
 // Section 3.9.2 Alignment with future versions of C++
@@ -592,7 +599,7 @@ public:
   friend bool operator==(const event &, const event &rhs) = default;
   friend bool operator!=(const event &, const event &rhs) = default;
 
-  void wait() { assert(0); }
+  void wait() { cudaEventSynchronize(ce_); }
 };
 
 // Section 4.6.4.3. Device aspects
@@ -1367,9 +1374,6 @@ inline constexpr property::no_init no_init;
 
 template <>
 struct is_property<property::no_init> : std::true_type {};
-
-template <typename T>
-using buffer_allocator = std::allocator<std::remove_const_t<T>>;
 
 // Section 4.7.6.6 Accessor declaration
 // ...used by buffer
@@ -2411,7 +2415,8 @@ concept is_contiguous = requires(C c) {
 
 } // namespace detail
 
-template <typename T, int dims = 1, typename AllocT = buffer_allocator<T>>
+template <typename T, int dims, typename AllocT>
+requires(dims==1||dims==2||dims==3)
 class buffer
 {
 public:
@@ -2628,7 +2633,7 @@ private:
   T* h_data_{}, *h_user_data_{};
   T* d_data_{};
   bool delete_;
-  event event_{};
+  event event_{}; // needed?
 #else
   std::shared_ptr<T[]> data_{};
 #endif

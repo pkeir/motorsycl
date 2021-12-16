@@ -48,8 +48,6 @@ bool simple_2d_nd_range()
     });
   }
 
-  //q.wait();
-
   bool b = true;
   for (std::size_t i = 0; i < sz; ++i)
     b = b && bdata[i];
