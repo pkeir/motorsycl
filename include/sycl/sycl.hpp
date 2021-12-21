@@ -414,8 +414,15 @@ public:
 
 using async_handler = std::function<void(sycl::exception_list)>;
 
+namespace detail {
+struct device_allocation {
+  void* data; // device data
+};
+}
+
 class context
 {
+  platform platform_;
 public:
 
   explicit context(const property_list &ps = {}) { }
@@ -445,10 +452,11 @@ public:
   template <typename param>
   typename param::return_type get_backend_info() const
   { assert(0); }
-
-private:
-  platform platform_;
 };
+
+namespace detail {
+  context g_context{}; // default context
+}
 
 // Section 4.13.2. Exception class interface
 class exception : public virtual std::exception
@@ -2136,7 +2144,11 @@ public:
 // Section 4.6.5 Queue interface
 // All constructors will implicitly construct a SYCL platform, device
 // and context in order to facilitate the construction of the queue.
-class queue {
+class queue
+{
+  device dev_;
+  context& context_{detail::g_context};
+
 public:
   friend class handler; // handler access to q_
 
@@ -2178,7 +2190,7 @@ public:
   ~queue() { wait(); }
 
   backend get_backend() const noexcept { assert(0); return {}; }
-  context get_context() const { assert(0); return context{}; } // todo
+  context get_context() const { return context_; }
   device get_device() const { return dev_; }
   bool is_in_order() const { assert(0); return {}; }
 
@@ -2269,10 +2281,6 @@ public:
       *p = h.kernel_event_;
     return h.kernel_event_;
   }
-
-private:
-  device dev_;
-  context context_;
 };
 
 namespace detail {
