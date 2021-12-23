@@ -47,6 +47,12 @@ template <int = 1, bool with_offset = true> class item;
 template <int = 1> class nd_item;
 template <typename, int> class vec;
 enum class aspect;
+enum class access_mode;
+enum class target;
+enum class placeholder; // Deprecated in SYCL 2020
+namespace access {
+  using sycl::placeholder;
+}
 
 } // namespace sycl
 
@@ -424,6 +430,10 @@ class context
 {
   platform platform_;
   std::vector<detail::device_allocation> allocations_;
+
+  template <typename, int, access_mode, target, access::placeholder>
+  friend class accessor;
+
 public:
 
   explicit context(const property_list &ps = {}) { }
@@ -441,6 +451,19 @@ public:
   /* -- property interface members -- */
 
   /* -- common interface members -- */
+  // Common reference semantics
+
+  context(const context &rhs) { assert(0); }
+  context(context &&rhs) { assert(0); }
+  context &operator=(const context &rhs) { assert(0); return *this; }
+  context &operator=(context &&rhs) { assert(0); return *this; }
+  ~context() {
+    for (const auto& a : allocations_)
+      cudaFree(a.d_p_);
+  }
+
+  friend bool operator==(const context &lhs, const context &rhs) = default;
+  friend bool operator!=(const context &lhs, const context &rhs) = default;
 
   backend get_backend() const noexcept { return platform_.get_backend(); }
   platform get_platform() const { return platform_; }
@@ -2106,13 +2129,14 @@ using decorated_private_ptr =
 class handler
 {
   queue& q_;
+  context& context_;
   std::vector<event*> buffer_events_;
   event kernel_event_;
 
   friend class queue; // ctor
   template <typename, int, access_mode, target, access::placeholder>
   friend class accessor; // q_
-  handler(queue& q) : q_{q} {}
+  handler(queue& q, context& c) : q_{q}, context_{c} {}
 
   template <int dims, typename K>
   void parallel_for(range<dims>, const K& k, const item<dims>);
@@ -2275,7 +2299,7 @@ public:
   template <typename T>
   event submit(T cgf)
   {
-    handler h{*this};
+    handler h{*this, context_};
     cgf(h);
     std::cout << h.buffer_events_.size() << " accessors considered!\n";
     for (event* p: h.buffer_events_)
@@ -2475,7 +2499,7 @@ public:
     }
 
 //    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
-    cudaMalloc(&d_data_, r.size() * sizeof(T));
+//    cudaMalloc(&d_data_, r.size() * sizeof(T));
    }
 #else
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
@@ -2785,7 +2809,10 @@ public:
 //      cudaMemcpyAsync(d_data_,buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
     const unsigned nbytes = range_.size() * sizeof(value_type);
-    cudaMemcpy(buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
+    cudaMalloc(&buf.d_data_, nbytes);
+    cudaMemcpy( buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
+    detail::device_allocation a{buf.d_data_};
+    cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
@@ -2800,7 +2827,10 @@ public:
 //      cudaMemcpyAsync(d_data_, buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
     const unsigned nbytes = range_.size() * sizeof(value_type);
-    cudaMemcpy(buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
+    cudaMalloc(&buf.d_data_, nbytes);
+    cudaMemcpy( buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
+    detail::device_allocation a{buf.d_data_};
+    cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
@@ -2936,7 +2966,7 @@ public:
   //  id<dimensions> index) const;
 
   std::add_pointer_t<value_type> get_pointer() const noexcept {
-  return d_data_;
+    return d_data_;
   }
 
   //template <access::decorated IsDecorated>
