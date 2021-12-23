@@ -416,13 +416,14 @@ using async_handler = std::function<void(sycl::exception_list)>;
 
 namespace detail {
 struct device_allocation {
-  void* data; // device data
+  void* d_p_; // device data
 };
 }
 
 class context
 {
   platform platform_;
+  std::vector<detail::device_allocation> allocations_;
 public:
 
   explicit context(const property_list &ps = {}) { }
@@ -2550,7 +2551,8 @@ public:
 
   ~buffer() {
     if (pq_) {
-      cudaMemcpy(h_data_, d_data_, range_.size() * sizeof(T), cudaMemcpyDeviceToHost);
+      const unsigned nbytes = range_.size() * sizeof(value_type);
+      cudaMemcpy(h_data_, d_data_, nbytes, cudaMemcpyDeviceToHost);
       pq_->wait(); // Refine: wait only if a kernel writes to the buffer
       event_;
     }
@@ -2782,7 +2784,8 @@ public:
 //    if (d_data_)
 //      cudaMemcpyAsync(d_data_,buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
-    cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
+    const unsigned nbytes = range_.size() * sizeof(value_type);
+    cudaMemcpy(buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
@@ -2796,7 +2799,8 @@ public:
 //    if (!d_data_)  // ensure data is copied only once
 //      cudaMemcpyAsync(d_data_, buf.h_data_,
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
-    cudaMemcpy(buf.d_data_, buf.h_data_, range_.size(), cudaMemcpyHostToDevice);
+    const unsigned nbytes = range_.size() * sizeof(value_type);
+    cudaMemcpy(buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
   }
