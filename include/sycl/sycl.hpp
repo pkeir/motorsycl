@@ -2815,6 +2815,7 @@ public:
     cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
+    d_data_ = buf.d_data_;  // use a reference instead
   }
 
   /* Available only when: (dims > 0) */
@@ -2833,6 +2834,7 @@ public:
     cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
+    d_data_ = buf.d_data_;  // use a reference instead
   }
 
   /* Available only when: (dims > 0) */
