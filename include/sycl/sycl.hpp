@@ -2802,8 +2802,7 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-           const property_list &ps = {})
-    : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
+           const property_list &ps = {}) : range_{buf.range_}, offset_{}
   {
 //    if (d_data_)
 //      cudaMemcpyAsync(d_data_,buf.h_data_,
@@ -2815,14 +2814,13 @@ public:
     cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
-    d_data_ = buf.d_data_;  // use a reference instead
+    d_data_ = buf.d_data_;
   }
 
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
-           const property_list &ps = {})
-    : d_data_{buf.d_data_}, range_{buf.range_}, offset_{}
+           const property_list &ps = {}) : range_{buf.range_}, offset_{}
   {
 //    if (!d_data_)  // ensure data is copied only once
 //      cudaMemcpyAsync(d_data_, buf.h_data_,
@@ -2834,7 +2832,7 @@ public:
     cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
-    d_data_ = buf.d_data_;  // use a reference instead
+    d_data_ = buf.d_data_;
   }
 
   /* Available only when: (dims > 0) */
@@ -2985,7 +2983,7 @@ public:
   const_reverse_iterator crend() const noexcept;
   */
 
-  dataT* d_data_{};
+  dataT* d_data_{}; // cannot be a reference as the buffer is stored on the host
   const range<dims> range_;
   const id<dims> offset_;
 };
