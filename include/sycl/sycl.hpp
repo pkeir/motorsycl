@@ -2466,45 +2466,36 @@ public:
 
   buffer(const range<dims> &r, const property_list &ps = {})
     : range_{r},
-#ifdef __NVCOMPILER
-      data_{alloc_.allocate(r.size())}, delete_{true} {}
-#else
-      data_{alloc_.allocate(r.size()),
-            [this](auto* p){ alloc_.deallocate(p, range_.size()); }} {}
-#endif
+     h_data_{alloc_.allocate(r.size()),
+             [this](auto* p){ alloc_.deallocate(p, range_.size()); }} {}
 
   buffer(const range<dims> &r, AllocT alloc, const property_list &ps = {})
   { assert(0); }
 
-#ifdef __NVCOMPILER
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
-    : range_{r}
+    : range_{r}, h_data_{hostData,[](auto){}}
   {
     const bool well_aligned = true;
     const bool use_host_ptr = true;
     if (!well_aligned && !use_host_ptr) {
       std::cerr << "Warning: misaligned host data passed to buffer.\n";
-      h_data_ = alloc_.allocate(r.size()); // ensure well aligned
-//      h_data_.reset(alloc_.allocate(r.size()),
-//                  [this](auto* p){ alloc_.deallocate(p, range_.size()); });
+//      h_data_ = alloc_.allocate(r.size()); // ensure well aligned
+      h_data_.reset(alloc_.allocate(r.size()),
+                    [this](auto* p){ alloc_.deallocate(p, range_.size()); });
+      std::copy_n(hostData, r.size(), h_data_.get());
       h_user_data_ = hostData;
-      std::copy_n(h_user_data_, r.size(), h_data_);
-      delete_ = true;
+//      delete_ = true;
 //      std::copy_n(h_data_internal_, r.size(), data_.get());
     }
-    else {
-      h_data_ = hostData;
-      delete_ = false;
+//    else {
+//      h_data_ = hostData;
+//      delete_ = false;
 //      data_.reset(hostData,[](auto){});
-    }
+//    }
 
 //    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
 //    cudaMalloc(&d_data_, r.size() * sizeof(T));
    }
-#else
-  buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
-    : range_{r}, data_{hostData,[](auto){}} { }
-#endif
 
   buffer(T *hostData, const range<dims> &r,
          AllocT alloc, const property_list &ps = {})
@@ -2513,11 +2504,7 @@ public:
   buffer(const T *hostData, const range<dims> &r, const property_list &ps = {})
     : buffer{r, ps}
   {
-#ifdef __NVCOMPILER
-    std::copy_n(hostData, r.size(), data_);
-#else
     std::copy_n(hostData, r.size(), data_.get());
-#endif
   }
 
   buffer(const T *hostData, const range<dims> &r,
@@ -2573,19 +2560,25 @@ public:
   buffer(buffer& b, const id<dims> &baseIndex, const range<dims> &subRange)
   { assert(0); }
 
+  // common reference semantics
+  buffer(const buffer&)            = default;
+  buffer(buffer&&)                 = default;
+  buffer& operator=(const buffer&) = default;
+  buffer& operator=(buffer&&)      = default;
+
   ~buffer() {
     if (pq_) {
       const unsigned nbytes = range_.size() * sizeof(value_type);
-      cudaMemcpy(h_data_, d_data_, nbytes, cudaMemcpyDeviceToHost);
+      cudaMemcpy(h_data_.get(), d_data_, nbytes, cudaMemcpyDeviceToHost);
       pq_->wait(); // Refine: wait only if a kernel writes to the buffer
       event_;
     }
     if (h_user_data_) {
-      std::copy_n(h_data_, range_.size(), h_user_data_);
+      std::copy_n(h_data_.get(), range_.size(), h_user_data_);
 //      alloc_.deallocate(h_data_internal_, range_.size()); // why?
 //      std::copy_n(data_.get(), range_.size(), h_data_internal_);
     }
-    if (delete_) alloc_.deallocate(h_data_, range_.size());
+//    if (delete_) alloc_.deallocate(h_data_, range_.size());
   }
 
   range<dims> get_range() const { return range_; }
@@ -2663,14 +2656,13 @@ private:
   allocator_type alloc_{};
   const range<dims> range_{};
   queue* pq_{};
-#ifdef __NVCOMPILER
-  T* h_data_{}, *h_user_data_{};
+//  T* h_data_{};
+  std::shared_ptr<T[]> h_data_{};
+  T* h_user_data_{};
   T* d_data_{};
-  bool delete_;
+  buffer* original_{this};
+//  bool delete_;
   event event_{}; // needed?
-#else
-  std::shared_ptr<T[]> data_{};
-#endif
 };
 
 // Deduction guides
@@ -2827,7 +2819,7 @@ public:
 //                      range_.size(), cudaMemcpyHostToDevice, 0);
     const unsigned nbytes = range_.size() * sizeof(value_type);
     cudaMalloc(&buf.d_data_, nbytes);
-    cudaMemcpy( buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
+    cudaMemcpy( buf.d_data_, buf.h_data_.get(), nbytes, cudaMemcpyHostToDevice);
     detail::device_allocation a{buf.d_data_};
     cgh.context_.allocations_.push_back(std::move(a));
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
