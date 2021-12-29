@@ -25,6 +25,7 @@
 #include <bit>          // std::bit_cast
 #include <exception>    // std::exception_ptr
 #include <system_error> // std::is_error_condition_enum
+#include <unordered_map>
 
 namespace sycl
 {
@@ -429,7 +430,7 @@ struct device_allocation {
 class context
 {
   platform platform_;
-  std::vector<detail::device_allocation> allocations_;
+  std::unordered_map<void*,detail::device_allocation> allocations_;
 
   template <typename, int, access_mode, target, access::placeholder>
   friend class accessor;
@@ -459,7 +460,7 @@ public:
   context &operator=(context &&rhs) { assert(0); return *this; }
   ~context() {
     for (const auto& a : allocations_)
-      cudaFree(a.d_p_);
+      cudaFree(a.second.d_p_);
   }
 
   friend bool operator==(const context &lhs, const context &rhs) = default;
@@ -2803,7 +2804,7 @@ public:
     cudaMalloc(&buf.d_data_, nbytes);
     cudaMemcpy( buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
     detail::device_allocation a{buf.d_data_};
-    cgh.context_.allocations_.push_back(std::move(a));
+    cgh.context_.allocations_[buf.original_] = std::move(a);
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
     d_data_ = buf.d_data_;
@@ -2821,7 +2822,7 @@ public:
     cudaMalloc(&buf.d_data_, nbytes);
     cudaMemcpy( buf.d_data_, buf.h_data_.get(), nbytes, cudaMemcpyHostToDevice);
     detail::device_allocation a{buf.d_data_};
-    cgh.context_.allocations_.push_back(std::move(a));
+    cgh.context_.allocations_[buf.original_] = std::move(a);
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
     d_data_ = buf.d_data_;
