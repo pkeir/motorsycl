@@ -2797,14 +2797,17 @@ public:
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            const property_list &ps = {}) : range_{buf.range_}, offset_{}
   {
-//    if (d_data_)
-//      cudaMemcpyAsync(d_data_,buf.h_data_,
-//                      range_.size(), cudaMemcpyHostToDevice, 0);
-    const unsigned nbytes = range_.size() * sizeof(value_type);
-    cudaMalloc(&buf.d_data_, nbytes);
-    cudaMemcpy( buf.d_data_, buf.h_data_, nbytes, cudaMemcpyHostToDevice);
-    detail::device_allocation a{buf.d_data_};
-    cgh.context_.allocations_[buf.original_] = std::move(a);
+    auto& allocs = cgh.context_.allocations_;
+    if (allocs.find(buf.original_) == allocs.end())
+    {
+      const unsigned nbytes = range_.size() * sizeof(value_type);
+      cudaMalloc(&buf.d_data_, nbytes);
+      cudaMemcpy( buf.d_data_, buf.h_data_.get(), nbytes,
+                  cudaMemcpyHostToDevice);
+      detail::device_allocation a{buf.d_data_};
+      allocs[buf.original_] = std::move(a);
+    }
+
     cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
     buf.pq_ = &cgh.q_;
     d_data_ = buf.d_data_;
@@ -2813,25 +2816,12 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
-           const property_list &ps = {}) : range_{buf.range_}, offset_{}
-  {
-//    if (!d_data_)  // ensure data is copied only once
-//      cudaMemcpyAsync(d_data_, buf.h_data_,
-//                      range_.size(), cudaMemcpyHostToDevice, 0);
-    const unsigned nbytes = range_.size() * sizeof(value_type);
-    cudaMalloc(&buf.d_data_, nbytes);
-    cudaMemcpy( buf.d_data_, buf.h_data_.get(), nbytes, cudaMemcpyHostToDevice);
-    detail::device_allocation a{buf.d_data_};
-    cgh.context_.allocations_[buf.original_] = std::move(a);
-    cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
-    buf.pq_ = &cgh.q_;
-    d_data_ = buf.d_data_;
-  }
+           const property_list &ps = {}) : accessor{buf, cgh, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf,
-  range<dims> accessRange, const property_list &ps = {})
+           range<dims> accessRange, const property_list &ps = {})
   { assert(0); }
 
   /* Available only when: (dims > 0) */
