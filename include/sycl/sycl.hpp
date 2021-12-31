@@ -48,12 +48,62 @@ template <int = 1, bool with_offset = true> class item;
 template <int = 1> class nd_item;
 template <typename, int> class vec;
 enum class aspect;
-enum class access_mode;
-enum class target;
-enum class placeholder; // Deprecated in SYCL 2020
+
+// Section 4.7.6.1 Access targets
+enum class target {
+  device,
+  host_task,
+  global_buffer = device, // Deprecated
+  constant_buffer,        // Deprecated
+  local,                  // Deprecated
+  host_buffer             // Deprecated
+};
+namespace access {
+  using sycl::target;
+} // namespace access
+
+// Section 4.7.6.2
+enum class access_mode {
+  read,
+  write,
+  read_write,
+  discard_write,      // Deprecated in SYCL 2020
+  discard_read_write, // Deprecated in SYCL 2020
+  atomic              // Deprecated in SYCL 2020
+};
+namespace access {
+  using sycl::access_mode;
+}
+
+// Section 4.7.6.5 Placeholder accessor
+enum class placeholder { // Deprecated in SYCL 2020
+  false_t,
+  true_t,
+};
 namespace access {
   using sycl::placeholder;
 }
+
+// Section 4.7.6.9.1 Interface for buffer command accessors
+template <
+  typename dataT,
+  int dims = 1,
+  access_mode AccessMode = (std::is_const_v<dataT> ? access_mode::read
+                                                   : access_mode::read_write),
+  target AccessTarget = target::device,
+  access::placeholder isPlaceholder = access::placeholder::false_t // *
+  // * Deprecated in SYCL 2020:
+>
+class accessor;
+
+// Section 4.7.6.10.1 Interface for buffer host accessors
+template <
+  typename dataT,
+  int dims = 1,
+  access_mode AccessMode = (std::is_const_v<dataT> ? access_mode::read :
+                                                     access_mode::read_write)
+>
+class host_accessor;
 
 } // namespace sycl
 
@@ -1342,34 +1392,6 @@ public:
   { return {get_global_range(), get_local_range()}; }
 };
 
-// Section 4.7.6.1 Access targets
-enum class target {
-  device,
-  host_task,
-  global_buffer = device, // Deprecated
-  constant_buffer,        // Deprecated
-  local,                  // Deprecated
-  host_buffer             // Deprecated
-};
-
-namespace access {
-  using sycl::target;
-} // namespace access
-
-// Section 4.7.6.2
-enum class access_mode {
-  read,
-  write,
-  read_write,
-  discard_write,      // Deprecated in SYCL 2020
-  discard_read_write, // Deprecated in SYCL 2020
-  atomic              // Deprecated in SYCL 2020
-};
-
-namespace access {
-  using sycl::access_mode;
-}
-
 // Section 4.7.6.3 Access tags
 template <access_mode>
 struct mode_tag_t {
@@ -1388,16 +1410,6 @@ struct mode_target_tag_t {
 inline constexpr
 mode_target_tag_t<access_mode::read, target::constant_buffer> read_constant{};
 
-// Section 4.7.6.5 Placeholder accessor
-enum class placeholder { // Deprecated in SYCL 2020
-  false_t,
-  true_t,
-};
-
-namespace access {
-  using sycl::placeholder;
-} // namespace access
-
 // Section 4.7.6.9.2 Device buffer accessor properties
 namespace property {
   struct no_init {};
@@ -1407,27 +1419,6 @@ inline constexpr property::no_init no_init;
 
 template <>
 struct is_property<property::no_init> : std::true_type {};
-
-// Section 4.7.6.6 Accessor declaration
-// ...used by buffer
-template <
-  typename dataT,
-  int dims = 1,
-  access_mode accessmode = (std::is_const_v<dataT> ? access_mode::read
-                                                   : access_mode::read_write),
-  target accessTarget = target::global_buffer,
-  access::placeholder isPlaceholder = access::placeholder::false_t // *
-  // * Deprecated in SYCL 2020:
->
-class accessor;
-
-template <
-  typename dataT,
-  int dims = 1,
-  access_mode accessmode = (std::is_const_v<dataT> ? access_mode::read :
-                                                     access_mode::read_write)
->
-class host_accessor;
 
 class queue;
 
@@ -2467,8 +2458,8 @@ public:
 
   buffer(const range<dims> &r, const property_list &ps = {})
     : range_{r},
-     h_data_{alloc_.allocate(r.size()),
-             [this](auto* p){ alloc_.deallocate(p, range_.size()); }} {}
+      h_data_{alloc_.allocate(r.size()),
+              [this](auto* p){ alloc_.deallocate(p, range_.size()); }} {}
 
   buffer(const range<dims> &r, AllocT alloc, const property_list &ps = {})
   { assert(0); }
@@ -2480,23 +2471,12 @@ public:
     const bool use_host_ptr = true;
     if (!well_aligned && !use_host_ptr) {
       std::cerr << "Warning: misaligned host data passed to buffer.\n";
-//      h_data_ = alloc_.allocate(r.size()); // ensure well aligned
       h_data_.reset(alloc_.allocate(r.size()),
                     [this](auto* p){ alloc_.deallocate(p, range_.size()); });
       std::copy_n(hostData, r.size(), h_data_.get());
       h_user_data_ = hostData;
-//      delete_ = true;
-//      std::copy_n(h_data_internal_, r.size(), data_.get());
     }
-//    else {
-//      h_data_ = hostData;
-//      delete_ = false;
-//      data_.reset(hostData,[](auto){});
-//    }
-
-//    cudaMallocAsync(&d_data_, r.size() * sizeof(T), 0);
-//    cudaMalloc(&d_data_, r.size() * sizeof(T));
-   }
+  }
 
   buffer(T *hostData, const range<dims> &r,
          AllocT alloc, const property_list &ps = {})
@@ -2568,12 +2548,12 @@ public:
   buffer& operator=(buffer&&)      = default;
 
   ~buffer() {
-    if (pq_) {
+//    if (pq_) {
+      // pq_->wait(); // Refine: wait only if a kernel writes to the buffer
+      event_.wait();
       const unsigned nbytes = range_.size() * sizeof(value_type);
       cudaMemcpy(h_data_.get(), d_data_, nbytes, cudaMemcpyDeviceToHost);
-      pq_->wait(); // Refine: wait only if a kernel writes to the buffer
-      event_;
-    }
+//    }
     if (h_user_data_) {
       std::copy_n(h_data_.get(), range_.size(), h_user_data_);
 //      alloc_.deallocate(h_data_internal_, range_.size()); // why?
@@ -2657,12 +2637,10 @@ private:
   allocator_type alloc_{};
   const range<dims> range_{};
   queue* pq_{};
-//  T* h_data_{};
   std::shared_ptr<T[]> h_data_{};
   T* h_user_data_{};
   T* d_data_{};
   buffer* original_{this};
-//  bool delete_;
   event event_{}; // needed?
 };
 
@@ -2745,8 +2723,8 @@ struct indexer<dataT, 2, accessmode>
 template <
   typename dataT,
   int dims,
-  access_mode accessmode,
-  access::target accessTarget,
+  access_mode AccessMode,
+  access::target AccessTarget,
   access::placeholder isPlaceholder
 >
 class accessor
@@ -2754,7 +2732,7 @@ class accessor
 public:
 
   using value_type =
-    std::conditional_t<accessmode == access_mode::read, const dataT, dataT>;
+    std::conditional_t<AccessMode == access_mode::read, const dataT, dataT>;
   using reference = value_type&;
   using const_reference = const dataT&;
   //template <access::decorated IsDecorated>
@@ -2790,7 +2768,8 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, TagT tag,
-  const property_list &ps = {}) { assert(0); }
+           const property_list &ps = {})
+  { assert(0); }
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -2808,7 +2787,16 @@ public:
       allocs[buf.original_] = std::move(a);
     }
 
-    cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
+    // See Table 57
+    if constexpr (AccessTarget==target::device)
+    {
+      if constexpr (AccessMode==access_mode::read_write ||
+                    AccessMode==access_mode::write)
+      {
+        cgh.buffer_events_.push_back(&buf.event_);   // used by queue::submit
+      }
+    }
+
     buf.pq_ = &cgh.q_;
     d_data_ = buf.d_data_;
   }
@@ -2923,13 +2911,13 @@ public:
   /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   template <int d = dims>
-  std::enable_if_t<(d==2), const detail::indexer<dataT, dims-1, accessmode>>
+  std::enable_if_t<(d==2), const detail::indexer<dataT, dims-1, AccessMode>>
   operator[](size_t index) const {
     return {d_data_ + range_[1] * index, {range_[1]}};
   }
 
   template <int d = dims>
-  std::enable_if_t<(d==3), const detail::indexer<dataT, dims-1, accessmode>>
+  std::enable_if_t<(d==3), const detail::indexer<dataT, dims-1, AccessMode>>
   operator[](size_t index) const {
 #ifdef __NVCOMPILER
     return {data_ + index * range_[1] * range_[2], {range_[1], range_[2]}};
