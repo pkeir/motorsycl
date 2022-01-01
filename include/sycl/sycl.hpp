@@ -2635,6 +2635,34 @@ public:
   template<typename... Ts>
   auto get_host_access(Ts... args) { return host_accessor{*this, args...}; }
 
+  template <typename Destination = std::nullptr_t>
+  void set_final_data(Destination finalData = nullptr)
+  { assert(0); }
+
+  void set_write_back(bool flag = true)
+  { assert(0); }
+
+  bool is_sub_buffer() const
+  { assert(0); return {}; }
+
+  template <typename ReinterpretT, int ReinterpretDim>
+  buffer<
+    ReinterpretT, ReinterpretDim,
+    typename std::allocator_traits<AllocT>::template rebind_alloc<ReinterpretT>
+  >
+  reinterpret(range<ReinterpretDim> reinterpretRange) const
+  { assert(0); return {}; }
+
+  template <typename ReinterpretT, int ReinterpretDim = dims>
+  buffer<
+    ReinterpretT, ReinterpretDim,
+    typename std::allocator_traits<AllocT>::template rebind_alloc<ReinterpretT>
+  >
+  reinterpret() const
+  requires( ReinterpretDim==1 ||
+           (ReinterpretDim==dims && sizeof(ReinterpretT)==sizeof(T)))
+  { assert(0); return {}; }
+
 private:
 
   allocator_type alloc_{};
