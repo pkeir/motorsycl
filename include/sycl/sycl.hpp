@@ -2471,9 +2471,9 @@ public:
     const bool use_host_ptr = true;
     if (!well_aligned && !use_host_ptr) {
       std::cerr << "Warning: misaligned host data passed to buffer.\n";
-      h_data_.reset(alloc_.allocate(r.size()),
-                    [this](auto* p){ alloc_.deallocate(p, range_.size()); });
-      std::copy_n(hostData, r.size(), h_data_.get());
+      h_data_.reset(alloc_.allocate(size()),
+                    [this](auto* p){ alloc_.deallocate(p, size()); });
+      std::copy_n(hostData, size(), h_data_.get());
       h_user_data_ = hostData;
     }
   }
@@ -2485,7 +2485,7 @@ public:
   buffer(const T *hostData, const range<dims> &r, const property_list &ps = {})
     : buffer{r, ps}
   {
-    std::copy_n(hostData, r.size(), data_.get());
+    std::copy_n(hostData, size(), data_.get());
   }
 
   buffer(const T *hostData, const range<dims> &r,
@@ -2577,45 +2577,49 @@ public:
 
   // Returns a valid accessor to the buffer with the specified access mode and
   // target in the command group buffer. The value of target can be
-  // access::target::global_buffer or access::constant_buffer.
+  // target::device or target::constant_buffer.
 
   template <
-    access_mode mode,
-    access::target target = access::target::global_buffer
+    access_mode Mode = access_mode::read_write,
+    target Targ = target::device
   >
-  accessor<T, dims, mode, target> get_access(handler &cgh)
+  accessor<T, dims, Mode, Targ> get_access(handler &cgh)
   {
     return {*this, cgh};
   }
 
+  // Deprecated in SYCL 2020. Use get_host_access() instead
   // Returns a valid host accessor to the buffer with the specified access mode
   // and target.
 
-  template <access_mode mode>
-  accessor<T, dims, mode, access::target::host_buffer>
+  template <access_mode Mode>
+  [[deprecated]]
+  accessor<T, dims, Mode, target::host_buffer>
   get_access() { assert(0); return {}; } // todo
 
   // Returns a valid accessor to the buffer with the specified access mode and
   // target in the command group buffer. Only the values starting from the
   // given offset and up to the given range are guaranteed to be updated. The
-  // value of target can be access::target::global_buffer or
-  // access::constant_buffer.
+  // value of target can be target::device or
+  // target::constant_buffer.
 
   template <
-    access_mode mode,
-    access::target target= access::target::global_buffer
+    access_mode Mode = access_mode::read_write,
+    target Targ = target::device
   >
-  accessor<T, dims, mode, target>
+  accessor<T, dims, Mode, Targ>
   get_access(handler &cgh, range<dims> accessRange, id<dims> accessOffset = {})
   { assert(0); return {}; }
 
+  // Deprecated in SYCL 2020. Use get_host_access() instead
   // Returns a valid host accessor to the buffer with the specified access mode
   // and target.  Only the values starting from the given off- set and up to
   // the given range are guaranteed to be updated. The value of target can only
-  // be access::target::host_buffer .
+  // be target::host_buffer .
 
-  template <access_mode mode>
-  accessor<T, dims, mode, access::target::host_buffer>
+  template <access_mode Mode>
+  [[deprecated]]
+  accessor<T, dims, Mode, target::host_buffer>
   get_access(range<dims> accessRange, id<dims> accessOffset = {})
   {
     assert(0); return {};
