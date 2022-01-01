@@ -2551,11 +2551,10 @@ public:
 //    if (pq_) {
       // pq_->wait(); // Refine: wait only if a kernel writes to the buffer
       event_.wait();
-      const unsigned nbytes = range_.size() * sizeof(value_type);
-      cudaMemcpy(h_data_.get(), d_data_, nbytes, cudaMemcpyDeviceToHost);
+      cudaMemcpy(h_data_.get(), d_data_, byte_size(), cudaMemcpyDeviceToHost);
 //    }
     if (h_user_data_) {
-      std::copy_n(h_data_.get(), range_.size(), h_user_data_);
+      std::copy_n(h_data_.get(), size(), h_user_data_);
 //      alloc_.deallocate(h_data_internal_, range_.size()); // why?
 //      std::copy_n(data_.get(), range_.size(), h_data_internal_);
     }
@@ -2564,7 +2563,7 @@ public:
 
   range<dims> get_range() const { return range_; }
 
-  size_t byte_size() const noexcept { return size() * sizeof(T); }
+  size_t byte_size() const noexcept { return size() * sizeof(value_type); }
 
   size_t size() const noexcept { return range_.size(); }
 
@@ -2779,9 +2778,8 @@ public:
     auto& allocs = cgh.context_.allocations_;
     if (allocs.find(buf.original_) == allocs.end())
     {
-      const unsigned nbytes = range_.size() * sizeof(value_type);
-      cudaMalloc(&buf.d_data_, nbytes);
-      cudaMemcpy( buf.d_data_, buf.h_data_.get(), nbytes,
+      cudaMalloc(&buf.d_data_, byte_size());
+      cudaMemcpy( buf.d_data_, buf.h_data_.get(), byte_size(),
                   cudaMemcpyHostToDevice);
       detail::device_allocation a{buf.d_data_};
       allocs[buf.original_] = std::move(a);
