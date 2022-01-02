@@ -2595,13 +2595,12 @@ public:
   template <access_mode Mode>
   [[deprecated]]
   accessor<T, dims, Mode, target::host_buffer>
-  get_access() { assert(0); return {}; } // todo
+  get_access() { assert(0); return {}; }
 
   // Returns a valid accessor to the buffer with the specified access mode and
   // target in the command group buffer. Only the values starting from the
   // given offset and up to the given range are guaranteed to be updated. The
-  // value of target can be target::device or
-  // target::constant_buffer.
+  // value of target can be target::device or target::constant_buffer.
 
   template <
     access_mode Mode = access_mode::read_write,
@@ -2613,7 +2612,7 @@ public:
 
   // Deprecated in SYCL 2020. Use get_host_access() instead
   // Returns a valid host accessor to the buffer with the specified access mode
-  // and target.  Only the values starting from the given off- set and up to
+  // and target.  Only the values starting from the given offset and up to
   // the given range are guaranteed to be updated. The value of target can only
   // be target::host_buffer .
 
@@ -2845,8 +2844,7 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange, TagT tag,
-           const property_list &ps = {})
-  { assert(0); }
+           const property_list &ps = {}) : accessor{buf, accessRange, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -2858,7 +2856,7 @@ public:
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
            id<dims> accessOffset, TagT tag, const property_list &ps = {})
-  { assert(0); }
+    : accessor{buf, accessRange, accessOffset, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -2869,9 +2867,8 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-           range<dims> accessRange, TagT tag,
-           const property_list &ps = {})
-  { assert(0); }
+           range<dims> accessRange, TagT tag, const property_list &ps = {})
+    : accessor{buf, cgh, accessRange, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -2886,7 +2883,7 @@ public:
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, id<dims> accessOffset, TagT tag,
            const property_list &ps = {})
-  { assert(0); }
+    : accessor{buf, cgh, accessRange, accessOffset, ps} {}
 
   void swap(accessor &other) { assert(0); }
 
@@ -3016,45 +3013,25 @@ public:
 
   host_accessor() = default;
 
-#if 0
   /* Available only when: (dims == 0) */
   template <typename AllocT>
-  host_accessor(buffer<dataT, 1, AllocT> &buf,
-                const property_list &ps = {})
+  host_accessor(buffer<dataT, 1, AllocT> &buf, const property_list &ps = {})
+    requires(dims==0)
   { assert(0); }
-
-  /* Available only when: (dims == 0) */
-  template <typename AllocT>
-  host_accessor(buffer<dataT, 1, AllocT> &buf,
-                handler &cgh, const property_list &ps = {})
-  { assert(0); }
-#endif
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf,
-                const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
-  template <typename AllocT, typename TagT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, TagT tag,
-                const property_list &ps = {})
-    : data_{buf.data_}, range_{buf.range_}, offset_{} {
+  host_accessor(buffer<dataT, dims, AllocT> &buf, const property_list &ps = {})
+    requires(dims>0)
+    : data_{buf.data_}, range_{buf.range_}, offset_{}
+  {
     if (buf.pq_) buf.pq_->wait();
   }
 
   /* Available only when: (dims > 0) */
-  template <typename AllocT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf,
-                handler &cgh, const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
-                const property_list &ps = {})
-  { assert(0); }
+  host_accessor(buffer<dataT, dims, AllocT> &buf, TagT tag,
+                const property_list &ps = {}) : host_accessor{buf, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -3066,7 +3043,7 @@ public:
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
                 TagT tag, const property_list &ps = {})
-  { assert(0); }
+    : host_accessor{buf, accessRange, ps} {}
 
   /* Available only when: (dims > 0) */
   template <typename AllocT>
@@ -3077,38 +3054,11 @@ public:
   /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
-                id<dims> accessOffset, TagT tag,
-                const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
-  template <typename AllocT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-                range<dims> accessRange, const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
-  template <typename AllocT, typename TagT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-                range<dims> accessRange, TagT tag,
-                const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
-  template <typename AllocT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-                range<dims> accessRange, id<dims> accessOffset,
-                const property_list &ps = {})
-  { assert(0); }
-
-  /* Available only when: (dims > 0) */
-  template <typename AllocT, typename TagT>
-  host_accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-                range<dims> accessRange, id<dims> accessOffset, TagT tag,
-                const property_list &ps = {})
-  { assert(0); }
+                id<dims> accessOffset, TagT tag, const property_list &ps = {})
+    : host_accessor{buf, accessRange, accessOffset, ps} {}
 
   /* -- common interface members -- */
+
   void swap(host_accessor &other) { assert(0); }
   size_type byte_size() const noexcept { assert(0); return {}; }
   size_type size() const noexcept { assert(0); return {}; }
