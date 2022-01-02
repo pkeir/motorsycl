@@ -773,17 +773,22 @@ public:
 
   [[deprecated]] bool has_extension(const std::string &extension) const;
 
-  // Available only when prop == info::partition_property::partition_equally
-  template <info::partition_property prop>
-  std::vector<device> create_sub_devices(size_t count) const;
+  template <info::partition_property Prop>
+  std::vector<device> create_sub_devices(size_t count)
+    requires(Prop==info::partition_property::partition_equally)
+  { assert(0); return {}; }
 
-   // Available only when prop == info::partition_property::partition_by_counts
-  template <info::partition_property prop>
-  std::vector<device> create_sub_devices(const std::vector<size_t> &counts) const;
+  template <info::partition_property Prop>
+  std::vector<device>
+  create_sub_devices(const std::vector<size_t> &counts) const
+    requires(Prop==info::partition_property::partition_by_counts)
+  { assert(0); return {}; }
 
-   // Available only when prop == info::partition_property::partition_by_affinity_domain
-  template <info::partition_property prop>
-  std::vector<device> create_sub_devices(info::partition_affinity_domain affinityDomain) const;
+  template <info::partition_property Prop>
+  std::vector<device>
+  create_sub_devices(info::partition_affinity_domain affinityDomain) const
+    requires(Prop==info::partition_property::partition_by_affinity_domain)
+  { assert(0); return {}; }
 
   static std::vector<device>
   get_devices(info::device_type dt = info::device_type::all)
@@ -1470,8 +1475,7 @@ template <
 class multi_ptr
 {
 public:
-  static constexpr bool is_decorated =
-    DecorateAddress == access::decorated::yes;
+  static constexpr bool is_decorated = DecorateAddress==access::decorated::yes;
   static constexpr access::address_space address_space = Space;
 
   using value_type = ElementType;
@@ -1578,26 +1582,30 @@ public:
                      DecorateAddress>() const;
 
   // Implicit conversion to a multi_ptr<void>.
-  // Only available when value_type is not const-qualified.
   template <access::decorated DecorateAddress2>
-  operator multi_ptr<void, Space, DecorateAddress2>() const;
+  operator multi_ptr<void, Space, DecorateAddress2>() const
+    requires(!std::is_const_v<value_type>)
+  { assert(0); return {}; }
 
   // Implicit conversion to a multi_ptr<const void>.
-  // Only available when value_type is const-qualified.
   template <access::decorated DecorateAddress2>
-  operator multi_ptr<const void, Space, DecorateAddress2>() const;
+  operator multi_ptr<const void, Space, DecorateAddress2>() const
+    requires(std::is_const_v<value_type>)
+  { assert(0); return {}; }
 
   // Implicit conversion to multi_ptr<const value_type, Space>.
   template <access::decorated DecorateAddress2>
   operator multi_ptr<const value_type, Space, DecorateAddress2>() const;
 
   // Implicit conversion to the non-decorated version of multi_ptr.
-  // Only available when is_decorated is true.
-  operator multi_ptr<value_type, Space, access::decorated::no>() const;
+  operator multi_ptr<value_type, Space, access::decorated::no>() const
+    requires(is_decorated)
+  { assert(0); return {}; }
 
   // Implicit conversion to the decorated version of multi_ptr.
-  // Only available when is_decorated is false.
-  //operator multi_ptr<value_type, Space, access::decorated::yes>() const;
+  operator multi_ptr<value_type, Space, access::decorated::yes>() const
+    requires(!is_decorated)
+  { assert(0); return {}; }
 
   void prefetch(size_t numElements) const;
 
@@ -1674,8 +1682,7 @@ class multi_ptr<void, Space, DecorateAddress>
   using VoidType = void;
 public:
 
-  static constexpr bool is_decorated =
-    DecorateAddress == access::decorated::yes;
+  static constexpr bool is_decorated = DecorateAddress==access::decorated::yes;
   static constexpr access::address_space address_space = Space;
 
   using value_type = VoidType;
@@ -1716,20 +1723,28 @@ public:
   multi_ptr &operator=(std::nullptr_t);
 
   pointer get() const;
+
   // Conversion to the underlying pointer type
   explicit operator pointer() const;
+
   // Explicit conversion to a multi_ptr<ElementType>
   // If VoidType is const, ElementType must be as well
   template <typename ElementType>
   explicit operator multi_ptr<ElementType, Space, DecorateAddress>() const;
+
   // Implicit conversion to the non-decorated version of multi_ptr.
-  // Only available when is_decorated is true.
-  operator multi_ptr<value_type, Space, access::decorated::no>() const;
+  operator multi_ptr<value_type, Space, access::decorated::no>() const
+    requires(is_decorated)
+  { assert(0); return {}; }
+
   // Implicit conversion to the decorated version of multi_ptr.
-  // Only available when is_decorated is false.
-  operator multi_ptr<value_type, Space, access::decorated::yes>() const;
+  operator multi_ptr<value_type, Space, access::decorated::yes>() const
+    requires(!is_decorated)
+  { assert(0); return {}; }
+
   // Implicit conversion to multi_ptr<const void, Space>
-  operator multi_ptr<const void, Space, DecorateAddress>() const;
+  operator multi_ptr<const void, Space, DecorateAddress>() const
+  { assert(0); return {}; }
 
   friend bool operator==(const multi_ptr& lhs, const multi_ptr& rhs)
   { assert(0); return {}; }
@@ -1873,12 +1888,14 @@ public:
   operator ElementType*() const;
 
   // Implicit conversion to a multi_ptr<void>
-  // Only available when ElementType is not const-qualified
-  operator multi_ptr<void, Space, access::decorated::legacy>() const;
+  operator multi_ptr<void, Space, access::decorated::legacy>() const
+    requires(!std::is_const_v<element_type>)
+  { assert(0); return {}; }
 
   // Implicit conversion to a multi_ptr<const void>
-  // Only available when ElementType is const-qualified
-  operator multi_ptr<const void, Space, access::decorated::legacy>() const;
+  operator multi_ptr<const void, Space, access::decorated::legacy>() const
+    requires(std::is_const_v<element_type>)
+  { assert(0); return {}; }
 
   // Implicit conversion to multi_ptr<const ElementType, Space>
   operator multi_ptr<const ElementType,Space,access::decorated::legacy>() const;
@@ -2492,19 +2509,11 @@ public:
          AllocT alloc, const property_list &ps = {})
   { assert(0); }
 
-  /* Available only if Container is a contiguous container:
-    - std::data(container) and std::size(container) are well formed
-    - return type of std::data(container) is convertible to T*
-    and dimensions == 1 */
   template <typename Container>
   buffer(Container &container, AllocT alloc, const property_list &ps = {})
   requires(detail::is_contiguous<Container,T> && dims==1)
     : buffer{container.data(), range<dims>{container.size()}, alloc, ps} { }
 
-  /* Available only if Container is a contiguous container:
-    - std::data(container) and std::size(container) are well formed
-    - return type of std::data(container) is convertible to T*
-    and dimensions == 1 */
   template <typename Container>
   buffer(Container &container, const property_list &ps = {})
   requires(detail::is_contiguous<Container,T> && dims==1)
@@ -2529,7 +2538,8 @@ public:
   // Uses buffer<T, 1> in the spec. Available only when: (dims == 1)?
   template <class InputIterator>
   buffer(InputIterator first, InputIterator last, AllocT alloc,
-         const property_list &ps = {}) requires(dims==1)
+         const property_list &ps = {})
+    requires(dims==1)
   { assert(0); }
 
   // Uses buffer<T, 1> in the spec. Available only when: (dims == 1)?
@@ -2777,34 +2787,32 @@ public:
 
   accessor() = default;
 
-  /* Available only when: (dims == 0) */
-#if 0
   template <typename AllocT>
-  accessor(buffer<dataT, 1, AllocT> &buf,
-  const property_list &ps = {}) { assert(0); }
-
-  /* Available only when: (dims == 0) */
-  template <typename AllocT>
-  accessor(buffer<dataT, 1, AllocT> &buf,
-  handler &cgh, const property_list &ps = {})
+  accessor(buffer<dataT, 1, AllocT> &buf, const property_list &ps = {})
+    requires(dims==0)
   { assert(0); }
-#endif
 
-  /* Available only when: (dims > 0) */
+  template <typename AllocT>
+  accessor(buffer<dataT, 1, AllocT> &buf,
+           handler &cgh, const property_list &ps = {})
+    requires(dims==0)
+  { assert(0); }
+
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, TagT tag,
            const property_list &ps = {})
-  { assert(0); }
+    requires(dims>0) : accessor{buf, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-           const property_list &ps = {}) : range_{buf.range_}, offset_{}
+           const property_list &ps = {})
+    requires(dims>0)
+    : range_{buf.range_}, offset_{}
   {
     auto& allocs = cgh.context_.allocations_;
     if (allocs.find(buf.original_) == allocs.end())
@@ -2830,60 +2838,57 @@ public:
     d_data_ = buf.d_data_;
   }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
-           const property_list &ps = {}) : accessor{buf, cgh, ps} {}
+           const property_list &ps = {})
+    requires(dims>0) : accessor{buf, cgh, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf,
            range<dims> accessRange, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange, TagT tag,
-           const property_list &ps = {}) : accessor{buf, accessRange, ps} {}
+           const property_list &ps = {})
+    requires(dims>0) : accessor{buf, accessRange, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
            id<dims> accessOffset, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
            id<dims> accessOffset, TagT tag, const property_list &ps = {})
-    : accessor{buf, accessRange, accessOffset, ps} {}
+    requires(dims>0) : accessor{buf, accessRange, accessOffset, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, TagT tag, const property_list &ps = {})
-    : accessor{buf, cgh, accessRange, ps} {}
+    requires(dims>0) : accessor{buf, cgh, accessRange, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, id<dims> accessOffset,
            const property_list &ps = {})
+    requires(dims>0)
     : data_{buf.data_}, range_{accessRange}, offset_{accessOffset}
-  { buf.pq_ = &cgh.q_; }
+  { assert(0); buf.pq_ = &cgh.q_; }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, id<dims> accessOffset, TagT tag,
            const property_list &ps = {})
-    : accessor{buf, cgh, accessRange, accessOffset, ps} {}
+    requires(dims>0) : accessor{buf, cgh, accessRange, accessOffset, ps} {}
 
   void swap(accessor &other) { assert(0); }
 
@@ -2892,19 +2897,18 @@ public:
   size_type size() const noexcept { return range_.size(); }
   size_type max_size() const noexcept { assert(0); return {}; }
 
-  [[deprecated]] size_t get_size() const { assert(0); return byte_size(); }
-  [[deprecated]] size_t get_count() const { return byte_size(); }
+  [[deprecated]] size_t get_size() const
+    requires(AccessTarget==target::device) { return byte_size(); }
+  [[deprecated]] size_t get_count() const
+    requires(AccessTarget==target::device) { return size(); }
 
   bool empty() const noexcept { return size() == 0; }
 
-  /* Available only when: (dimensions > 0) */
-  range<dims> get_range() const { return range_; }
+  range<dims> get_range() const requires(dims>0) { return range_; }
 
-  /* Available only when: (dimensions > 0) */
-  id<dims> get_offset() const { return offset_; }
+  id<dims> get_offset() const requires(dims>0) { return offset_; }
 
-  /* Available only when: (dimensions == 0) */
-  //operator reference() const;
+  operator reference() const requires(dims==0) { return (*this)[0]; }
 
 #if 0
   // todo: review these operator[] signatures
@@ -3013,13 +3017,11 @@ public:
 
   host_accessor() = default;
 
-  /* Available only when: (dims == 0) */
   template <typename AllocT>
   host_accessor(buffer<dataT, 1, AllocT> &buf, const property_list &ps = {})
     requires(dims==0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, const property_list &ps = {})
     requires(dims>0)
@@ -3028,54 +3030,50 @@ public:
     if (buf.pq_) buf.pq_->wait();
   }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, TagT tag,
-                const property_list &ps = {}) : host_accessor{buf, ps} {}
+                const property_list &ps = {})
+    requires(dims>0)
+    : host_accessor{buf, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf,
                 range<dims> accessRange, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
                 TagT tag, const property_list &ps = {})
+    requires(dims>0)
     : host_accessor{buf, accessRange, ps} {}
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
                 id<dims> accessOffset, const property_list &ps = {})
+    requires(dims>0)
   { assert(0); }
 
-  /* Available only when: (dims > 0) */
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
                 id<dims> accessOffset, TagT tag, const property_list &ps = {})
+    requires(dims>0)
     : host_accessor{buf, accessRange, accessOffset, ps} {}
 
   /* -- common interface members -- */
 
   void swap(host_accessor &other) { assert(0); }
-  size_type byte_size() const noexcept { assert(0); return {}; }
-  size_type size() const noexcept { assert(0); return {}; }
+  size_type byte_size() const noexcept { return range_.size() * sizeof(dataT); }
+  size_type size() const noexcept { return range_.size(); }
   size_type max_size() const noexcept { assert(0); return {}; }
-  bool empty() const noexcept { assert(0); return {}; }
+  bool empty() const noexcept { return size() == 0; }
 
-  /* Available only when: dims > 0 */
-  range<dims> get_range() const { return range_; }
+  range<dims> get_range() const requires(dims>0) { return range_; }
+  id<dims> get_offset() const requires(dims>0) { return offset_; }
+  operator reference() const requires(dims==0) { return (*this)[0]; }
 
-  /* Available only when: dims > 0 */
-  id<dims> get_offset() const { return offset_; }
-
-  /* Available only when: (dims == 0) */
-  //operator reference() const { assert(0); return {}; }
-
-  /* Available only when: (dims > 0) */
-  reference operator[](id<1> index) const { return data_[index[0]]; }
+  reference operator[](id<1> index) const
+    requires(dims > 0) { return data_[index[0]]; }
   reference operator[](id<2> index) const
   {
     return data_[index[0] * range_[1] + index[1]];
@@ -3302,12 +3300,9 @@ public:
   static constexpr size_t byte_size() noexcept {
     return sizeof(dataT) * (numElements==3 ? 4 : numElements);
   }
-
-  static constexpr size_t size() noexcept { return numElements; }
-
   [[deprecated]] size_t get_size() const { return byte_size(); }
 
-  // Deprecated
+  static constexpr size_t size() noexcept { return numElements; }
   [[deprecated]] size_t get_count() const { return size(); }
 
   template <typename convertT,
