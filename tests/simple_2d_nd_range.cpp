@@ -100,9 +100,12 @@ int main(int argc, char *argv[])
 {
   assert(basic_nd_range_type());
   assert(simple_2d_nd_range());
+
+  // Put these id default ctor tests somewhere more appropriate
   sycl::id<1> i1{};
   sycl::id<2> i2{};
   sycl::id<3> i3{};
   assert(i1[0]==0 && i2[0]==0 && i2[1]==0 && i3[0]==0 && i3[1]==0 && i3[2]==0);
+
   return 0;
 }

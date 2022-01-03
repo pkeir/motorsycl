@@ -2346,11 +2346,17 @@ __global__ void cuda_kernel_launch(const K k)
   k(mk_nd_item(id<dims>{})); // The id<dims>{} parameter sets the offset to zero
 }
 
+template <typename K>
+__global__ void cuda_kernel_launch_single_task(const K k)
+{
+  k();
+}
+
 } // namespace detail
 
 template <typename K>
 void handler::single_task(const K& k) {
-  q_.stdq_.push(k);
+  detail::cuda_kernel_launch_single_task<K><<<1,1>>>(k);
 }
 
 template <int dims, typename K>
