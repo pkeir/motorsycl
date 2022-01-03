@@ -1130,12 +1130,17 @@ requires(dims==1||dims==2||dims==3)
 class id : public std::array<std::size_t, dims>
 {
 public:
-  id() = default;
+  // Construct a SYCL id with the value 0 for each dimension.
+  id() : std::array<std::size_t, dims>{} {}
+
+  // common interface members (by-value semantics) (rule of zero)
+
 /*  id(std::size_t d, std::convertible_to<std::size_t> auto... ds)
     requires((sizeof...(ds))+1==dims)
     : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
 // GCC bug 100138. Workaround below:
 */
+
   template <typename ...Ts>
   id(std::size_t d, Ts... ds)
     requires((sizeof...(Ts))+1==dims &&
@@ -2333,7 +2338,7 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
 }
 
 template <typename U, typename A, typename T, T... Is>
-inline U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
+constexpr U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
 
 template <int dims, typename K>
 __global__ void cuda_kernel_launch(const K k)
@@ -2348,7 +2353,9 @@ __global__ void cuda_kernel_launch(const K k)
 } // namespace detail
 
 template <typename K>
-void handler::single_task(const K& k) { q_.stdq_.push(k); }
+void handler::single_task(const K& k) {
+  q_.stdq_.push(k);
+}
 
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
@@ -2500,10 +2507,7 @@ public:
   { assert(0); }
 
   buffer(const T *hostData, const range<dims> &r, const property_list &ps = {})
-    : buffer{r, ps}
-  {
-    std::copy_n(hostData, size(), data_.get());
-  }
+  { assert(0); }
 
   buffer(const T *hostData, const range<dims> &r,
          AllocT alloc, const property_list &ps = {})
