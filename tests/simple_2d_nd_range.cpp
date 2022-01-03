@@ -103,6 +103,6 @@ int main(int argc, char *argv[])
   sycl::id<1> i1{};
   sycl::id<2> i2{};
   sycl::id<3> i3{};
-  assert(i1[0]==0);
+  assert(i1[0]==0 && i2[0]==0 && i2[1]==0 && i3[0]==0 && i3[1]==0 && i3[2]==0);
   return 0;
 }

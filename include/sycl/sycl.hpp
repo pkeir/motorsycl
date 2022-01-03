@@ -2343,11 +2343,7 @@ constexpr U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
 template <int dims, typename K>
 __global__ void cuda_kernel_launch(const K k)
 {
-  if constexpr (dims==1) {
-    k(mk_nd_item(id<1>{0}));
-  } else {
-    k(mk_nd_item(id<2>{0,0}));
-  }
+  k(mk_nd_item(id<dims>{})); // The id<dims>{} parameter sets the offset to zero
 }
 
 } // namespace detail
