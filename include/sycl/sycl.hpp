@@ -447,26 +447,26 @@ private:
 };
 
 // Section 4.5.4.1 Properties interface
-template <typename propertyT>
+template <typename Property>
 struct is_property : std::false_type {};
 
-template <typename propertyT>
-inline constexpr bool
-is_property_v = is_property<propertyT>::value;
+template <typename Property>
+inline constexpr bool is_property_v = is_property<Property>::value;
 
-template <typename propertyT, typename syclObjectT>
+template <typename Property, typename SyclObject>
 struct is_property_of;
 
-template <typename propertyT, typename syclObjectT>
-inline constexpr bool
-is_property_of_v = is_property_of<propertyT, syclObjectT>::value;
+template <typename Property, typename SyclObject>
+inline constexpr bool is_property_of_v =
+  is_property_of<Property, SyclObject>::value;
 
 class property_list
 {
 public:
-  template <typename... propertyTN>
-  requires std::conjunction_v<is_property<propertyTN>...>
-  property_list(propertyTN... props) {}
+  template <typename... Properties>
+  requires std::conjunction_v<is_property<Properties>...>
+  property_list(Properties... props) {}
+
 };
 
 using async_handler = std::function<void(sycl::exception_list)>;
@@ -2464,6 +2464,11 @@ concept is_contiguous = requires(C c) {
   requires std::is_convertible_v<std::remove_pointer_t<decltype(std::data(c))> (*)[], const T (*)[]>;
 };
 
+inline bool is_aligned(const void * ptr, std::uintptr_t alignment) noexcept {
+  auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
+  return !(iptr % alignment);
+};
+
 } // namespace detail
 
 template <typename T, int dims, typename AllocT>
@@ -2493,8 +2498,8 @@ public:
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
     : range_{r}, h_data_{hostData,[](auto){}}
   {
-    const bool well_aligned = true;
-    const bool use_host_ptr = true;
+    const bool well_aligned = detail::is_aligned(hostData, alignof(value_type));
+    const bool use_host_ptr = false;
     if (!well_aligned && !use_host_ptr) {
       std::cerr << "Warning: misaligned host data passed to buffer.\n";
       h_data_.reset(alloc_.allocate(size()),
@@ -2563,19 +2568,28 @@ public:
   buffer& operator=(const buffer&) = default;
   buffer& operator=(buffer&&)      = default;
 
-  ~buffer() {
-//    if (pq_) {
-      // pq_->wait(); // Refine: wait only if a kernel writes to the buffer
-      event_.wait();
-      cudaMemcpy(h_data_.get(), d_data_, byte_size(), cudaMemcpyDeviceToHost);
-//    }
+private:
+  void wait_and_copy_back_data()
+  {
+    event_.wait();
+    cudaMemcpy(h_data_.get(), d_data_, byte_size(), cudaMemcpyDeviceToHost);
     if (h_user_data_) {
       std::copy_n(h_data_.get(), size(), h_user_data_);
-//      alloc_.deallocate(h_data_internal_, range_.size()); // why?
-//      std::copy_n(data_.get(), range_.size(), h_data_internal_);
     }
-//    if (delete_) alloc_.deallocate(h_data_, range_.size());
   }
+
+public:
+  ~buffer() { wait_and_copy_back_data(); }
+
+  // property interface members
+
+  template <typename Property>
+  bool has_property() const noexcept
+  { assert(0); return {}; }
+
+  template <typename Property>
+  Property get_property() const
+  { assert(0); return {}; }
 
   range<dims> get_range() const { return range_; }
 
@@ -2685,7 +2699,7 @@ private:
   queue* pq_{};
   std::shared_ptr<T[]> h_data_{};
   T* h_user_data_{};
-  T* d_data_{};
+  T* d_data_{}; // needed? Use the context's allocations_ 
   buffer* original_{this};
   event event_{}; // needed?
 };
@@ -2821,8 +2835,10 @@ public:
     : range_{buf.range_}, offset_{}
   {
     auto& allocs = cgh.context_.allocations_;
-    if (allocs.find(buf.original_) == allocs.end())
+//    if (allocs.find(buf.original_) == allocs.end())
+    if (allocs.contains(buf.original_))
     {
+      std::cerr << "Allocating device memory.\n";
       cudaMalloc(&buf.d_data_, byte_size());
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), byte_size(),
                   cudaMemcpyHostToDevice);
@@ -3031,9 +3047,10 @@ public:
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, const property_list &ps = {})
     requires(dims>0)
-    : data_{buf.data_}, range_{buf.range_}, offset_{}
+    : h_data_{buf.h_data_}, d_data_{buf.d_data_}, range_{buf.range_}
   {
-    if (buf.pq_) buf.pq_->wait();
+    // if (buf.pq_) buf.pq_->wait();
+    buf.wait_and_copy_back_data();
   }
 
   template <typename AllocT, typename TagT>
@@ -3066,6 +3083,11 @@ public:
     requires(dims>0)
     : host_accessor{buf, accessRange, accessOffset, ps} {}
 
+  ~host_accessor()
+  {
+    cudaMemcpy(d_data_, h_data_.get(), byte_size(), cudaMemcpyHostToDevice);
+  }
+
   /* -- common interface members -- */
 
   void swap(host_accessor &other) { assert(0); }
@@ -3082,33 +3104,29 @@ public:
     requires(dims > 0) { return data_[index[0]]; }
   reference operator[](id<2> index) const
   {
-    return data_[index[0] * range_[1] + index[1]];
+    return h_data_[index[0] * range_[1] + index[1]];
   }
 
   template <int d = dims>
-  std::enable_if_t<(d==1), reference>
-  operator[](size_t index) const { return data_[index]; }
+  requires(d==1)
+  reference
+  operator[](size_t index) const { return h_data_[index]; }
 
   /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   template <int d = dims>
-  std::enable_if_t<(d==2), const detail::indexer<dataT, dims-1, accessmode>>
+  requires(d==2)
+  const detail::indexer<dataT, dims-1, accessmode>
   operator[](size_t index) const {
-#ifdef __NVCOMPILER
-    return {data_ + range_[1] * index, {range_[1]}};
-#else
-    return {{data_, data_.get() + range_[1] * index}, {range_[1]}};
-#endif
+    return {{h_data_, h_data_.get() + range_[1] * index}, {range_[1]}};
   }
 
   template <int d = dims>
-  std::enable_if_t<(d==3), const detail::indexer<dataT, dims-1, accessmode>>
+  requires(d==3)
+  const detail::indexer<dataT, dims-1, accessmode>
   operator[](size_t index) const {
-#ifdef __NVCOMPILER
-    return {data_ + index * range_[1] * range_[2], {range_[1], range_[2]}};
-#else
-    return {{data_, data_.get() + index * range_[1] * range_[2]}, {range_[1], range_[2]}};
-#endif
+    return {{h_data_, h_data_.get() + index * range_[1] * range_[2]},
+            {range_[1], range_[2]}};
   }
 
 #if 0
@@ -3119,13 +3137,10 @@ public:
   const_iterator cend() const noexcept { assert(0); return {}; }
 #endif
 
-#ifdef __NVCOMPILER
-  dataT* data_;
-#else
-  std::shared_ptr<dataT[]> data_;
-#endif
-  const range<dims>& range_;
-  const id<dims> offset_;
+  std::shared_ptr<dataT[]> h_data_{};
+  void* d_data_{};
+  const range<dims> range_{};
+  const id<dims> offset_{};
 };
 
 // Section 4.8.3.2. Device allocation functions
