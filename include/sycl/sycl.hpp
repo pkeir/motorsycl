@@ -7,25 +7,26 @@
 #define SYCL_LANGUAGE_VERSION 202001
 
 #include <cuda_runtime.h>
-#include <cstddef>      // std::size_t
-#include <memory>       // std::allocator
-#include <type_traits>  // std::remove_const_t
-#include <queue>        // std::queue
-#include <functional>   // std::function, std::plus
-#include <cassert>      // assert
-#include <algorithm>    // std::for_each
-#include <numeric>      // std::iota (temporarily)
-#include <optional>     // std::optional
-#include <tuple>        // std::tuple_size, std::tuple_element
-#include <array>        // std::array
-#include <execution>    // std::execution Requires -ltbb
-#include <cmath>        // std::sin, std::cos, std::sqrt
-#include <mutex>        // std::mutex
-#include <span>         // std::span, std::dynamic_extent
-#include <bit>          // std::bit_cast
-#include <exception>    // std::exception_ptr
-#include <system_error> // std::is_error_condition_enum
-#include <unordered_map>
+#include <cstddef>       // std::size_t
+#include <memory>        // std::allocator
+#include <type_traits>   // std::remove_const_t
+#include <queue>         // std::queue
+#include <functional>    // std::function, std::plus
+#include <cassert>       // assert
+#include <algorithm>     // std::for_each
+#include <numeric>       // std::iota (temporarily)
+#include <optional>      // std::optional
+#include <tuple>         // std::tuple_size, std::tuple_element
+#include <array>         // std::array
+#include <execution>     // std::execution Requires -ltbb
+#include <cmath>         // std::sin, std::cos, std::sqrt
+#include <mutex>         // std::mutex
+#include <span>          // std::span, std::dynamic_extent
+#include <bit>           // std::bit_cast
+#include <exception>     // std::exception_ptr
+#include <system_error>  // std::is_error_condition_enum
+#include <unordered_map> // std::unordered_map
+#include <variant>       // std::variant
 
 namespace sycl
 {
@@ -104,6 +105,79 @@ template <
                                                      access_mode::read_write)
 >
 class host_accessor;
+
+namespace property {
+
+class no_init;
+
+namespace buffer {
+
+class use_host_ptr;
+class use_mutex;
+class context_bound;
+
+} // namespace property
+} // namespace buffer
+
+// Section 4.5.4.1 Properties interface
+template <typename Property>
+struct is_property : std::false_type {};
+
+template <typename Property>
+inline constexpr bool is_property_v = is_property<Property>::value;
+
+template <typename Property, typename SyclObject>
+struct is_property_of;
+
+template <typename Property, typename SyclObject>
+inline constexpr bool is_property_of_v =
+  is_property_of<Property, SyclObject>::value;
+
+template <>
+struct is_property<property::buffer::use_host_ptr>  : std::true_type {};
+
+namespace detail {
+
+template <typename> struct is_buffer   : std::false_type {};
+template <typename> struct is_accessor : std::false_type {};
+template <typename T, int dims, typename AllocT>
+struct is_buffer<buffer<T,dims,AllocT>> : std::true_type {};
+template <
+  typename dataT,
+  int dims,
+  access_mode AccessMode,
+  target AccessTarget,
+  access::placeholder isPlaceholder
+>
+struct is_accessor<accessor<dataT,dims,AccessMode,AccessTarget,isPlaceholder>>
+  : std::true_type {};
+
+} // namespace detail
+
+template <typename T>
+struct is_property_of<property::buffer::use_host_ptr,T>
+  : std::disjunction<detail::is_buffer<T>> {}; // disjunction? for other classes
+
+template <>
+struct is_property<property::buffer::use_mutex>     : std::true_type {};
+
+template <typename T>
+struct is_property_of<property::buffer::use_mutex,T>
+  : std::disjunction<detail::is_buffer<T>> {};
+
+template <>
+struct is_property<property::buffer::context_bound> : std::true_type {};
+
+template <typename T>
+struct is_property_of<property::buffer::context_bound,T>
+  : std::disjunction<detail::is_buffer<T>> {};
+
+template <>
+struct is_property<property::no_init>               : std::true_type {};
+
+template <typename T>
+struct is_property_of<property::no_init,T>
+  : std::disjunction<detail::is_accessor<T>> {};
 
 } // namespace sycl
 
@@ -446,27 +520,38 @@ private:
   std::vector<device> devices_;
 };
 
-// Section 4.5.4.1 Properties interface
-template <typename Property>
-struct is_property : std::false_type {};
+namespace detail {
 
-template <typename Property>
-inline constexpr bool is_property_v = is_property<Property>::value;
+template <typename...>
+struct type_set : std::true_type {};
 
-template <typename Property, typename SyclObject>
-struct is_property_of;
+template <typename T, typename... Ts>
+struct type_set<T,Ts...>
+{
+  static const bool value = (!std::is_same_v<T,Ts> && ...)
+                            && type_set<Ts...>::value;
+};
 
-template <typename Property, typename SyclObject>
-inline constexpr bool is_property_of_v =
-  is_property_of<Property, SyclObject>::value;
+template <typename... Ts>
+constexpr bool type_set_v = type_set<Ts...>::value;
+
+} // namespace detail
 
 class property_list
 {
 public:
   template <typename... Properties>
-  requires std::conjunction_v<is_property<Properties>...>
-  property_list(Properties... props) {}
+  requires std::conjunction_v<is_property<Properties>...> &&
+           detail::type_set_v<Properties...>
+  property_list(Properties... props) : ps_{{v_t{props}...}} {}
 
+private:
+  using v_t = std::variant<property::buffer::use_host_ptr,
+                           property::buffer::use_mutex,
+                           property::buffer::context_bound,
+                           property::no_init>;
+
+  std::vector<v_t> ps_;
 };
 
 using async_handler = std::function<void(sycl::exception_list)>;
@@ -1426,9 +1511,6 @@ namespace property {
 } // namespace property
 
 inline constexpr property::no_init no_init;
-
-template <>
-struct is_property<property::no_init> : std::true_type {};
 
 class queue;
 
@@ -2427,34 +2509,38 @@ void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
 
 // Does parallel_for with offset support using id?
 
-// Section 4.7.2.1 Buffer interface
+// Section 4.7.2.2 Buffer properties
 namespace property {
 namespace buffer {
 
 class use_host_ptr
 {
-  public:
+public:
   use_host_ptr() = default;
 };
 
 class use_mutex
 {
-  public:
-  use_mutex(std::mutex &mutexRef);
-  std::mutex *get_mutex_ptr() const;
+public:
+  use_mutex(std::mutex &mutexRef) : mutexRef_{mutexRef} {}
+  std::mutex* get_mutex_ptr() const { return &mutexRef_; }
+
+private:
+  std::mutex& mutexRef_;
 };
 
 class context_bound
 {
-  public:
-  context_bound(context boundContext);
-  context get_context() const;
+public:
+  context_bound(context boundContext) : boundContext_{boundContext} {}
+  context get_context() const { return boundContext_; }
+
+private:
+  context boundContext_;
 };
+
 } // namespace buffer
 } // namespace property
-
-template <>
-struct is_property<property::buffer::use_host_ptr> : std::true_type {};
 
 namespace detail {
 
@@ -2496,7 +2582,7 @@ public:
   { assert(0); }
 
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
-    : range_{r}, h_data_{hostData,[](auto){}}
+    : range_{r}, h_data_{hostData,[](auto){}}, ps_{ps}
   {
     const bool well_aligned = detail::is_aligned(hostData, alignof(value_type));
     const bool use_host_ptr = false;
@@ -2585,11 +2671,22 @@ public:
 
   template <typename Property>
   bool has_property() const noexcept
-  { assert(0); return {}; }
+  {
+    for (const auto& v : pl_.ps_)
+      if (holds_alternative<Property>(v))
+        return true;
+    return false;
+  }
 
   template <typename Property>
   Property get_property() const
-  { assert(0); return {}; }
+  {
+    for (const auto& v : pl_.ps_)
+      if (holds_alternative<Property>(v))
+        return std::get<Property>(v);
+    throw sycl::exception{errc::invalid,
+                          "buffer not constructed with this property"};
+  }
 
   range<dims> get_range() const { return range_; }
 
@@ -2699,9 +2796,10 @@ private:
   queue* pq_{};
   std::shared_ptr<T[]> h_data_{};
   T* h_user_data_{};
-  T* d_data_{}; // needed? Use the context's allocations_ 
+  T* d_data_{}; // needed? Use the context's allocations_
   buffer* original_{this};
   event event_{}; // needed?
+  property_list ps_{};
 };
 
 // Deduction guides
