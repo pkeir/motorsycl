@@ -487,7 +487,15 @@ public:
   template <typename DeviceSelector>
   explicit platform(const DeviceSelector &sel) { assert(0); }
 
-  /* -- common interface members -- */
+  /* -- common reference semantics -- */
+
+  platform(const platform&)                                = default;
+  platform(const platform&&)                               = default;
+  platform& operator=(platform&&)                          = default;
+  platform& operator=(const platform&)                     = default;
+  ~platform()                                              = default;
+  friend bool operator==(const platform&, const platform&) = default;
+  friend bool operator!=(const platform&, const platform&) = default;
 
   backend get_backend() const { return backend_; }
 
@@ -559,6 +567,7 @@ using async_handler = std::function<void(sycl::exception_list)>;
 namespace detail {
 struct device_allocation {
   void* d_p_; // device data
+  bool operator==(const device_allocation&) const = default; // for context ==
 };
 }
 
@@ -586,8 +595,7 @@ public:
 
   /* -- property interface members -- */
 
-  /* -- common interface members -- */
-  // Common reference semantics
+  /* -- common reference semantics -- */
 
   context(const context &rhs) { assert(0); }
   context(context &&rhs) { assert(0); }
@@ -598,8 +606,8 @@ public:
       cudaFree(a.second.d_p_);
   }
 
-  friend bool operator==(const context &lhs, const context &rhs) = default;
-  friend bool operator!=(const context &lhs, const context &rhs) = default;
+  friend bool operator==(const context&, const context&) = default;
+  friend bool operator!=(const context&, const context&) = default;
 
   backend get_backend() const noexcept { return platform_.get_backend(); }
   platform get_platform() const { return platform_; }
@@ -757,13 +765,13 @@ public:
 
   event() { cudaEventCreateWithFlags(&ce_, cudaEventDisableTiming); }
 
-  // common reference semantics
+  /* -- common reference semantics -- */
 
-  event(const event&)            = default;
-  event(const event&&)           = default;
-  event& operator=(event&&)      = default;
-  event& operator=(const event&) = default;
-  ~event()                       = default;
+  event(const event&)                                     = default;
+  event(const event&&)                                    = default;
+  event& operator=(event&&)                               = default;
+  event& operator=(const event&)                          = default;
+  ~event()                                                = default;
   friend bool operator==(const event &, const event &rhs) = default;
   friend bool operator!=(const event &, const event &rhs) = default;
 
@@ -809,7 +817,15 @@ public:
     if (it != ds.end()) { platform_ = it->get_platform(); }
   }
 
-   /* -- common interface members -- */
+  /* -- common reference semantics -- */
+
+  device(const device&)                                = default;
+  device(const device&&)                               = default;
+  device& operator=(device&&)                          = default;
+  device& operator=(const device&)                     = default;
+  ~device()                                            = default;
+  friend bool operator==(const device&, const device&) = default;
+  friend bool operator!=(const device&, const device&) = default;
 
   backend get_backend() const noexcept { return platform_.get_backend(); }
 
@@ -2648,7 +2664,8 @@ public:
   buffer(buffer& b, const id<dims> &baseIndex, const range<dims> &subRange)
   { assert(0); }
 
-  // common reference semantics
+  /* -- common reference semantics -- */
+
   buffer(const buffer&)            = default;
   buffer(buffer&&)                 = default;
   buffer& operator=(const buffer&) = default;
@@ -2685,7 +2702,7 @@ public:
       if (holds_alternative<Property>(v))
         return std::get<Property>(v);
     throw sycl::exception{errc::invalid,
-                          "buffer not constructed with this property"};
+                          "the buffer was not constructed with this property."};
   }
 
   range<dims> get_range() const { return range_; }
