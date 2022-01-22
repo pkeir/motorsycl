@@ -33,6 +33,7 @@ namespace sycl
 
 class device;
 class context;
+class exception;
 class exception_list;
 template <typename T>
 using buffer_allocator = std::allocator<T>;
@@ -548,18 +549,43 @@ constexpr bool type_set_v = type_set<Ts...>::value;
 class property_list
 {
 public:
+
   template <typename... Properties>
-  requires std::conjunction_v<is_property<Properties>...> &&
-           detail::type_set_v<Properties...>
-  property_list(Properties... props) : ps_{{v_t{props}...}} {}
+    requires std::conjunction_v<is_property<Properties>...> &&
+             detail::type_set_v<Properties...>
+  property_list(Properties... props) : vs_{{v_t{props}...}} {}
 
 private:
+
+  template <typename, int dims, typename>
+  requires(dims==1||dims==2||dims==3)
+  friend class buffer;
+
+  template <typename Property>
+  bool has_property() const noexcept
+  {
+    for (const auto& v : vs_)
+      if (holds_alternative<Property>(v))
+        return true;
+    return false;
+  }
+
+  template <typename Property>
+  Property get_property(sycl::exception& e) const
+  {
+    for (const auto& v : vs_)
+      if (holds_alternative<Property>(v))
+        return std::get<Property>(v);
+
+    throw e;
+  }
+
   using v_t = std::variant<property::buffer::use_host_ptr,
                            property::buffer::use_mutex,
                            property::buffer::context_bound,
                            property::no_init>;
 
-  std::vector<v_t> ps_;
+  std::vector<v_t> vs_;
 };
 
 using async_handler = std::function<void(sycl::exception_list)>;
@@ -2687,22 +2713,15 @@ public:
   // property interface members
 
   template <typename Property>
-  bool has_property() const noexcept
-  {
-    for (const auto& v : pl_.ps_)
-      if (holds_alternative<Property>(v))
-        return true;
-    return false;
-  }
+  bool has_property() const noexcept { return ps_.has_property<Property>(); }
 
   template <typename Property>
   Property get_property() const
   {
-    for (const auto& v : pl_.ps_)
-      if (holds_alternative<Property>(v))
-        return std::get<Property>(v);
-    throw sycl::exception{errc::invalid,
-                          "the buffer was not constructed with this property."};
+    sycl::exception e{errc::invalid,
+                      "the buffer was not constructed with this property."};
+    return ps_.get_property<Property>(e);
+
   }
 
   range<dims> get_range() const { return range_; }
