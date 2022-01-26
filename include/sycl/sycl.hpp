@@ -506,6 +506,23 @@ struct command_end;
 
 } // namespace info
 
+} // namespace sycl
+
+namespace std {
+
+template <>
+struct is_error_code_enum<sycl::errc> : std::true_type {};
+
+template <>
+struct is_error_code_enum<sycl::backend_traits<sycl::backend::host>::errc>
+  : std::true_type {};
+
+template <>
+struct is_error_code_enum<sycl::backend_traits<sycl::backend::nvhpc>::errc>
+  : std::true_type {};
+
+} // namespace std
+
 /*inline std::ostream& operator<<(std::ostream &o, backend be)
 {
   switch (be)
@@ -519,6 +536,8 @@ struct command_end;
 
   return o;
 }*/
+
+namespace sycl {
 
 // Section 4.6.2.1 Platform interface
 // Glossary: "A collection of devices managed by a single backend."
@@ -738,7 +757,12 @@ public:
   // PGK: Added "noexcept":  https://stackoverflow.com/a/53830534/2023370
   const char *what() const noexcept { return what_.c_str(); }
   bool has_context() const noexcept { return ctx_.has_value(); }
-  context get_context() const { return *ctx_; }
+  context get_context() const
+  {
+    if (ctx_)
+      return *ctx_;
+    else throw exception{errc::invalid};
+  }
 
 private:
   std::optional<context> ctx_{};
@@ -789,25 +813,6 @@ const std::error_category& error_category_for() noexcept {
   assert(0);
   return std::system_category();
 }
-
-} // namespace sycl
-
-namespace std {
-
-template <>
-struct is_error_code_enum<sycl::errc> : std::true_type {};
-
-template <>
-struct is_error_code_enum<sycl::backend_traits<sycl::backend::host>::errc>
-  : std::true_type {};
-
-template <>
-struct is_error_code_enum<sycl::backend_traits<sycl::backend::nvhpc>::errc>
-  : std::true_type {};
-
-} // namespace std
-
-namespace sycl {
 
 // Section 4.6.6 Event class
 class event
