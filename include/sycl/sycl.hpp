@@ -719,18 +719,16 @@ public:
     : ec_{ev,ecat}, what_{w} { }
   exception(int ev, const std::error_category& ecat)  : ec_{ev,ecat}       { }
   exception(context ctx, std::error_code ec, const std::string& w)
-    : ctx_{ctx}, hc_{true}, ec_{ec}, what_{w} { }
+    : ctx_{ctx}, ec_{ec}, what_{w} { }
   exception(context ctx, std::error_code ec, const char* w)
-    : ctx_{ctx}, hc_{true}, ec_{ec}, what_{w} { }
-  exception(context ctx, std::error_code ec) : ctx_{ctx}, hc_{true}, ec_{ec} { }
+    : ctx_{ctx}, ec_{ec}, what_{w} { }
+  exception(context ctx, std::error_code ec) : ctx_{ctx}, ec_{ec}          { }
   exception(context ctx, int ev, const std::error_category& ecat,
-            const std::string& w)
-    : ctx_{ctx}, hc_{true}, ec_{ev,ecat}, what_{w} { }
+            const std::string& w) : ctx_{ctx}, ec_{ev,ecat}, what_{w}      { }
   exception(context ctx, int ev, const std::error_category& ecat,
-            const char* w)
-    : ctx_{ctx}, hc_{true}, ec_{ev,ecat}, what_{w} { }
+            const char* w)        : ctx_{ctx}, ec_{ev,ecat}, what_{w}      { }
   exception(context ctx, int ev, const std::error_category& ecat)
-    : ctx_{ctx}, hc_{true}, ec_{ev,ecat} { }
+    : ctx_{ctx}, ec_{ev,ecat} { }
 
   const std::error_code& code() const noexcept { return ec_; }
   const std::error_category& category() const noexcept {
@@ -739,12 +737,11 @@ public:
 
   // PGK: Added "noexcept":  https://stackoverflow.com/a/53830534/2023370
   const char *what() const noexcept { return what_.c_str(); }
-  bool has_context() const noexcept { return hc_; }
-  context get_context() const { return ctx_; }
+  bool has_context() const noexcept { return ctx_.has_value(); }
+  context get_context() const { return *ctx_; }
 
 private:
-  context ctx_{};
-  bool hc_{}; // false
+  std::optional<context> ctx_{};
   std::error_code ec_{};
   std::string what_{};
 };
