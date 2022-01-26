@@ -24,7 +24,7 @@
 #include <span>          // std::span, std::dynamic_extent
 #include <bit>           // std::bit_cast
 #include <exception>     // std::exception_ptr
-#include <system_error>  // std::is_error_condition_enum
+#include <system_error>  // std::is_error_code_enum
 #include <unordered_map> // std::unordered_map
 #include <variant>       // std::variant
 
@@ -137,7 +137,50 @@ inline constexpr bool is_property_of_v =
 template <>
 struct is_property<property::buffer::use_host_ptr>  : std::true_type {};
 
+enum class errc
+{
+  runtime,
+  kernel,
+  accessor,
+  nd_range,
+  event,
+  kernel_argument,
+  build,
+  invalid,
+  memory_allocation,
+  platform,
+  profiling,
+  feature_not_supported,
+  kernel_not_supported,
+  backend_mismatch
+};
+
 namespace detail {
+
+std::string errc_to_string(const errc ec)
+{
+  std::string s{};
+
+  switch (ec) {
+    case errc::runtime              : s = "runtime";               break;
+    case errc::kernel               : s = "kernel";                break;
+    case errc::accessor             : s = "accessor";              break;
+    case errc::nd_range             : s = "nd_range";              break;
+    case errc::event                : s = "event";                 break;
+    case errc::kernel_argument      : s = "kernel_argument";       break;
+    case errc::build                : s = "build";                 break;
+    case errc::invalid              : s = "invalid";               break;
+    case errc::memory_allocation    : s = "memory_allocation";     break;
+    case errc::platform             : s = "platform";              break;
+    case errc::profiling            : s = "profiling";             break;
+    case errc::feature_not_supported: s = "feature_not_supported"; break;
+    case errc::kernel_not_supported : s = "kernel_not_supported";  break;
+    case errc::backend_mismatch     : s = "backend_mismatch";      break;
+    default                         : s = "unknown errc enum";     break;
+  }
+
+  return s;
+}
 
 template <typename> struct is_buffer   : std::false_type {};
 template <typename> struct is_accessor : std::false_type {};
@@ -592,7 +635,8 @@ using async_handler = std::function<void(sycl::exception_list)>;
 
 namespace detail {
 struct device_allocation {
-  void* d_p_; // device data
+//  void* d_p_; // device data
+  std::shared_ptr<void> d_p_;
   bool operator==(const device_allocation&) const = default; // for context ==
 };
 }
@@ -600,6 +644,7 @@ struct device_allocation {
 class context
 {
   platform platform_;
+  // map between original buffer address, and the device allocation
   std::unordered_map<void*,detail::device_allocation> allocations_;
 
   template <typename, int, access_mode, target, access::placeholder>
@@ -623,15 +668,11 @@ public:
 
   /* -- common reference semantics -- */
 
-  context(const context &rhs) { assert(0); }
-  context(context &&rhs) { assert(0); }
-  context &operator=(const context &rhs) { assert(0); return *this; }
-  context &operator=(context &&rhs) { assert(0); return *this; }
-  ~context() {
-    for (const auto& a : allocations_)
-      cudaFree(a.second.d_p_);
-  }
-
+  context(const context &)                               = default;
+  context(context &&)                                    = default;
+  context &operator=(const context &)                    = default;
+  context &operator=(context &&)                         = default;
+  ~context()                                             = default;
   friend bool operator==(const context&, const context&) = default;
   friend bool operator!=(const context&, const context&) = default;
 
@@ -652,47 +693,60 @@ namespace detail {
   context g_context{}; // default context
 }
 
+namespace detail {
+
+class sycl_error_category : public std::error_category
+{
+  const char* name() const noexcept { return "sycl"; }
+  std::string message(int condition) const {
+    return detail::errc_to_string(static_cast<sycl::errc>(condition));
+  }
+};
+
+} // namespace detail
+
 // Section 4.13.2. Exception class interface
 class exception : public virtual std::exception
 {
 public:
 
-  exception(std::error_code ec, const std::string& what_arg) { assert(0); }
-  exception(std::error_code ec, const char * what_arg) { assert(0); }
-  exception(std::error_code ec) { assert(0); }
-  exception(int ev, const std::error_category& ecat,
-            const std::string& what_arg) { assert(0); }
-  exception(int ev, const std::error_category& ecat, const char* what_arg) {
-    assert(0);
-  }
-  exception(int ev, const std::error_category& ecat) { assert(0); }
-  exception(context ctx, std::error_code ec, const std::string& what_arg) {
-    assert(0);
-  }
-  exception(context ctx, std::error_code ec, const char* what_arg) {
-    assert(0);
-  }
-  exception(context ctx, std::error_code ec) { assert(0); }
+  exception(std::error_code ec, const std::string& w) : ec_{ec}, what_{w}  { }
+  exception(std::error_code ec, const char* w)        : ec_{ec}, what_{w}  { }
+  exception(std::error_code ec)                       : ec_{ec}            { }
+  exception(int ev, const std::error_category& ecat, const std::string& w)
+    : ec_{ev,ecat}, what_{w} { }
+  exception(int ev, const std::error_category& ecat, const char* w)
+    : ec_{ev,ecat}, what_{w} { }
+  exception(int ev, const std::error_category& ecat)  : ec_{ev,ecat}       { }
+  exception(context ctx, std::error_code ec, const std::string& w)
+    : ctx_{ctx}, hc_{true}, ec_{ec}, what_{w} { }
+  exception(context ctx, std::error_code ec, const char* w)
+    : ctx_{ctx}, hc_{true}, ec_{ec}, what_{w} { }
+  exception(context ctx, std::error_code ec) : ctx_{ctx}, hc_{true}, ec_{ec} { }
   exception(context ctx, int ev, const std::error_category& ecat,
-            const std::string& what_arg) { assert(0); }
+            const std::string& w)
+    : ctx_{ctx}, hc_{true}, ec_{ev,ecat}, what_{w} { }
   exception(context ctx, int ev, const std::error_category& ecat,
-            const char* what_arg) { assert(0); }
-  exception(context ctx, int ev, const std::error_category& ecat) {
-    assert(0);
-  }
-  const std::error_code& code() const noexcept {
-    assert(0);
-    static const std::error_code err;
-    return err;
-  }
+            const char* w)
+    : ctx_{ctx}, hc_{true}, ec_{ev,ecat}, what_{w} { }
+  exception(context ctx, int ev, const std::error_category& ecat)
+    : ctx_{ctx}, hc_{true}, ec_{ev,ecat} { }
+
+  const std::error_code& code() const noexcept { return ec_; }
   const std::error_category& category() const noexcept {
-    assert(0);
-    return std::system_category();
+    return ec_.category();
   }
+
   // PGK: Added "noexcept":  https://stackoverflow.com/a/53830534/2023370
-  const char *what() const noexcept { assert(0); return "abcdefghijklm"; }
-  bool has_context() const noexcept { assert(0); return {}; }
-  context get_context() const { assert(0); context c; return c; }
+  const char *what() const noexcept { return what_.c_str(); }
+  bool has_context() const noexcept { return hc_; }
+  context get_context() const { return ctx_; }
+
+private:
+  context ctx_{};
+  bool hc_{}; // false
+  std::error_code ec_{};
+  std::string what_{};
 };
 
 // Used as a container for a list of asynchronous exceptions
@@ -721,38 +775,16 @@ private:
   container_t data_;
 };
 
-enum class errc
-{
-  runtime,
-  kernel,
-  accessor,
-  nd_range,
-  event,
-  kernel_argument,
-  build,
-  invalid,
-  memory_allocation,
-  platform,
-  profiling,
-  feature_not_supported,
-  kernel_not_supported,
-  backend_mismatch
-};
-
 template <backend b>
 using errc_for = typename backend_traits<b>::errc;
 
-std::error_condition make_error_condition(errc e) noexcept {
-  assert(0);
-  return std::error_condition{};
-}
-std::error_code make_error_code(errc e) noexcept {
-  assert(0);
-  return std::error_code{};
-}
 const std::error_category& sycl_category() noexcept {
-  assert(0);
-  return std::system_category();
+  static detail::sycl_error_category ecat_s;
+  return ecat_s;
+}
+
+std::error_code make_error_code(errc ec) noexcept {
+  return std::error_code{static_cast<int>(ec),sycl_category()};
 }
 
 template<backend b>
@@ -764,9 +796,6 @@ const std::error_category& error_category_for() noexcept {
 } // namespace sycl
 
 namespace std {
-
-template <>
-struct is_error_condition_enum<sycl::errc> : std::true_type {};
 
 template <>
 struct is_error_code_enum<sycl::errc> : std::true_type {};
@@ -2976,7 +3005,8 @@ public:
       cudaMalloc(&buf.d_data_, byte_size());
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), byte_size(),
                   cudaMemcpyHostToDevice);
-      detail::device_allocation a{buf.d_data_};
+//      detail::device_allocation a{buf.d_data_};
+      detail::device_allocation a{{buf.d_data_, [](auto* p){ cudaFree(p); }}};
       allocs[buf.original_] = std::move(a);
     }
 
