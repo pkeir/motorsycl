@@ -615,7 +615,7 @@ public:
   template <typename... Properties>
     requires std::conjunction_v<is_property<Properties>...> &&
              detail::type_set_v<Properties...>
-  property_list(Properties... props) : vs_{{v_t{props}...}} {}
+  property_list(Properties... props) : vs_{v_t{props}...} {}
 
 private:
 
@@ -626,6 +626,7 @@ private:
   template <typename Property>
   bool has_property() const noexcept
   {
+    auto sz = vs_.size();
     for (const auto& v : vs_)
       if (holds_alternative<Property>(v))
         return true;
