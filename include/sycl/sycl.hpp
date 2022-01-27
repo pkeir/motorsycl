@@ -626,7 +626,6 @@ private:
   template <typename Property>
   bool has_property() const noexcept
   {
-    auto sz = vs_.size();
     for (const auto& v : vs_)
       if (holds_alternative<Property>(v))
         return true;
@@ -2745,9 +2744,11 @@ public:
   // property interface members
 
   template <typename Property>
+  requires(is_property_of_v<Property, buffer>)
   bool has_property() const noexcept { return ps_.has_property<Property>(); }
 
   template <typename Property>
+  requires(is_property_of_v<Property, buffer>)
   Property get_property() const
   {
     sycl::exception e{errc::invalid,
