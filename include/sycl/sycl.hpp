@@ -27,6 +27,7 @@
 #include <system_error>  // std::is_error_code_enum
 #include <unordered_map> // std::unordered_map
 #include <variant>       // std::variant
+#include <cxxabi.h>
 
 namespace sycl
 {
@@ -156,6 +157,8 @@ enum class errc
 };
 
 namespace detail {
+
+template <typename> struct property_query;
 
 std::string errc_to_string(const errc ec)
 {
@@ -622,6 +625,9 @@ private:
   template <typename, int dims, typename>
   requires(dims==1||dims==2||dims==3)
   friend class buffer;
+
+  template <typename Property>
+  friend class detail::property_query;
 
   template <typename Property>
   bool has_property() const noexcept
@@ -2628,11 +2634,34 @@ inline bool is_aligned(const void * ptr, std::uintptr_t alignment) noexcept {
   return !(iptr % alignment);
 };
 
+template <typename SyclObject>
+struct property_query
+{
+  template <typename Property>
+  requires(is_property_of_v<Property, SyclObject>)
+  bool has_property() const noexcept {
+    return ps_.has_property<Property>();
+  }
+
+  template <typename Property>
+  requires(is_property_of_v<Property, SyclObject>)
+  Property get_property() const
+  {
+    std::string son = typeid(SyclObject).name();
+    sycl::exception e{errc::invalid, son + " was not constructed with " +
+                                     typeid(Property).name() + "property."};
+    return ps_.get_property<Property>(e);
+
+  }
+
+  property_list ps_{};
+};
+
 } // namespace detail
 
 template <typename T, int dims, typename AllocT>
 requires(dims==1||dims==2||dims==3)
-class buffer
+class buffer : public detail::property_query<buffer<T,dims,AllocT>>
 {
 public:
 
@@ -2655,7 +2684,7 @@ public:
   { assert(0); }
 
   buffer(T* hostData, const range<dims>& r, const property_list &ps = {})
-    : range_{r}, h_data_{hostData,[](auto){}}, ps_{ps}
+    : range_{r}, h_data_{hostData,[](auto){}}, detail::property_query<buffer>{ps}
   {
     const bool well_aligned = detail::is_aligned(hostData, alignof(value_type));
     const bool use_host_ptr = false;
@@ -2740,22 +2769,6 @@ private:
 
 public:
   ~buffer() { wait_and_copy_back_data(); }
-
-  // property interface members
-
-  template <typename Property>
-  requires(is_property_of_v<Property, buffer>)
-  bool has_property() const noexcept { return ps_.has_property<Property>(); }
-
-  template <typename Property>
-  requires(is_property_of_v<Property, buffer>)
-  Property get_property() const
-  {
-    sycl::exception e{errc::invalid,
-                      "the buffer was not constructed with this property."};
-    return ps_.get_property<Property>(e);
-
-  }
 
   range<dims> get_range() const { return range_; }
 
@@ -2868,7 +2881,7 @@ private:
   T* d_data_{}; // needed? Use the context's allocations_
   buffer* original_{this};
   event event_{}; // needed?
-  property_list ps_{};
+  //property_list ps_{};
 };
 
 // Deduction guides
