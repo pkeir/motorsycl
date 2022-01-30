@@ -272,7 +272,7 @@ public:
 //  bool operator==(const property_query&) const = default;
 
 //  friend bool operator==(const property_query&) = default; // ICE
-//  friend bool operator==(const property_query&, const property_query&) = default; // ICE
+  friend bool operator==(const property_query&, const property_query&) = default; // ICE
 
   property_list ps_{};
 };
@@ -650,13 +650,17 @@ public:
 
   /* -- common reference semantics -- */
 
-  platform(const platform&)                                = default;
-  platform(const platform&&)                               = default;
-  platform& operator=(platform&&)                          = default;
-  platform& operator=(const platform&)                     = default;
-  ~platform()                                              = default;
-  friend bool operator==(const platform&, const platform&) = default;
-  friend bool operator!=(const platform&, const platform&) = default;
+  platform(const platform&)            = default;
+  platform(platform&&)                 = default;
+  platform& operator=(const platform&) = default;
+  platform& operator=(platform&&)      = default;
+  ~platform()                          = default;
+  friend bool operator==(const platform& lhs, const platform& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const platform& lhs, const platform& rhs) {
+    return !(lhs==rhs);
+  }
 
   backend get_backend() const { return backend_; }
 
@@ -687,6 +691,7 @@ public:
 private:
   backend backend_;
   std::vector<device> devices_;
+  platform* original_{this}; // So: this class is a copy if original_ != this
 };
 
 using async_handler = std::function<void(sycl::exception_list)>;
@@ -695,13 +700,14 @@ namespace detail {
 struct device_allocation {
 //  void* d_p_; // device data
   std::shared_ptr<void> d_p_;
-  bool operator==(const device_allocation&) const = default; // for context ==
 };
 }
 
-class context // : public detail::property_query<context>
+class context : public detail::property_query<context>
 {
   platform platform_;
+  context* original_{this}; // So: this class is a copy if original_ != this
+
   // map between original buffer address, and the device allocation
   std::unordered_map<void*,detail::device_allocation> allocations_;
 
@@ -711,8 +717,7 @@ class context // : public detail::property_query<context>
 public:
 
   explicit context(const property_list &ps = {})
-//    : detail::property_query<context>{ps} { }
-  {}
+    : detail::property_query<context>{ps} { }
   explicit context(async_handler ah, const property_list &ps = {})
   { assert(0); }
   explicit context(const device &dev, const property_list &ps = {})
@@ -726,13 +731,17 @@ public:
 
   /* -- common reference semantics -- */
 
-  context(const context &)                               = default;
-  context(context &&)                                    = default;
-  context &operator=(const context &)                    = default;
-  context &operator=(context &&)                         = default;
-  ~context()                                             = default;
-  friend bool operator==(const context&, const context&) = default;
-  friend bool operator!=(const context&, const context&) = default;
+  context(const context &)            = default;
+  context(context &&)                 = default;
+  context &operator=(const context &) = default;
+  context &operator=(context &&)      = default;
+  ~context()                          = default;
+  friend bool operator==(const context& lhs, const context& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const context& lhs, const context& rhs) {
+    return !(lhs==rhs);
+  }
 
   backend get_backend() const noexcept { return platform_.get_backend(); }
   platform get_platform() const { return platform_; }
@@ -855,19 +864,24 @@ const std::error_category& error_category_for() noexcept {
 class event
 {
   cudaEvent_t ce_;
+  event* original_{this}; // So: this class is a copy if original_ != this
 public:
 
   event() { cudaEventCreateWithFlags(&ce_, cudaEventDisableTiming); }
 
   /* -- common reference semantics -- */
 
-  event(const event&)                                     = default;
-  event(const event&&)                                    = default;
-  event& operator=(event&&)                               = default;
-  event& operator=(const event&)                          = default;
-  ~event()                                                = default;
-  friend bool operator==(const event &, const event &rhs) = default;
-  friend bool operator!=(const event &, const event &rhs) = default;
+  event(const event&)            = default;
+  event(event&&)                 = default;
+  event& operator=(const event&) = default;
+  event& operator=(event&&)      = default;
+  ~event()                       = default;
+  friend bool operator==(const event& lhs, const event& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const event& lhs, const event& rhs) {
+    return !(lhs==rhs);
+  }
 
   void wait() { cudaEventSynchronize(ce_); }
 };
@@ -913,13 +927,17 @@ public:
 
   /* -- common reference semantics -- */
 
-  device(const device&)                                = default;
-  device(const device&&)                               = default;
-  device& operator=(device&&)                          = default;
-  device& operator=(const device&)                     = default;
-  ~device()                                            = default;
-  friend bool operator==(const device&, const device&) = default;
-  friend bool operator!=(const device&, const device&) = default;
+  device(const device&)            = default;
+  device(device&&)                 = default;
+  device& operator=(const device&) = default;
+  device& operator=(device&&)      = default;
+  ~device()                        = default;
+  friend bool operator==(const device& lhs, const device& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const device& lhs, const device& rhs) {
+    return !(lhs==rhs);
+  }
 
   backend get_backend() const noexcept { return platform_.get_backend(); }
 
@@ -998,6 +1016,7 @@ public:
 private:
   std::string name_;
   platform platform_; // a reference to a platform, shared by multiple devices?
+  device* original_{this}; // So: this class is a copy if original_ != this
 };
 
 struct default_selector
@@ -2379,6 +2398,7 @@ class queue : public detail::property_query<queue>
 {
   device dev_;
   context context_{detail::g_context};
+  queue* original_{this}; // So: this class is a copy if original_ != this
 
 public:
   friend class handler; // handler access to q_
@@ -2424,17 +2444,19 @@ public:
                  const async_handler &asyncHandler,
                  const property_list &ps = {}) { assert(0); }
 
-  ~queue() { wait(); }
-
   /* -- common reference semantics -- */
 
-  queue(const queue&)                                = default;
-  queue(const queue&&)                               = default;
-  queue& operator=(queue&&)                          = default;
-  queue& operator=(const queue&)                     = default;
-  //~queue()                                           = default;
-  friend bool operator==(const queue&, const queue&) = default;
-  friend bool operator!=(const queue&, const queue&) = default;
+  queue(const queue&)            = default;
+  queue(queue&&)                 = default;
+  queue& operator=(const queue&) = default;
+  queue& operator=(queue&&)      = default;
+  ~queue() { wait(); }
+  friend bool operator==(const queue& lhs, const queue& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const queue& lhs, const queue& rhs) {
+    return !(lhs==rhs);
+  }
 
   backend get_backend() const noexcept { return context_.get_backend(); }
   context get_context() const { return context_; }
@@ -2781,6 +2803,13 @@ public:
   buffer(buffer&&)                 = default;
   buffer& operator=(const buffer&) = default;
   buffer& operator=(buffer&&)      = default;
+  ~buffer() { wait_and_copy_back_data(); }
+  friend bool operator==(const buffer& lhs, const buffer& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const buffer& lhs, const buffer& rhs) {
+    return !(lhs==rhs);
+  }
 
 private:
   void wait_and_copy_back_data()
@@ -2793,8 +2822,6 @@ private:
   }
 
 public:
-  ~buffer() { wait_and_copy_back_data(); }
-
   range<dims> get_range() const { return range_; }
 
   size_t byte_size() const noexcept { return size() * sizeof(value_type); }
@@ -2904,9 +2931,8 @@ private:
   std::shared_ptr<T[]> h_data_{};
   T* h_user_data_{};
   T* d_data_{}; // needed? Use the context's allocations_
-  buffer* original_{this};
   event event_{}; // needed?
-  //property_list ps_{};
+  buffer* original_{this}; // So: this class is a copy if original_ != this
 };
 
 // Deduction guides
