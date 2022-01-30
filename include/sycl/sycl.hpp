@@ -135,9 +135,6 @@ template <typename Property, typename SyclObject>
 inline constexpr bool is_property_of_v =
   is_property_of<Property, SyclObject>::value;
 
-template <>
-struct is_property<property::buffer::use_host_ptr>  : std::true_type {};
-
 enum class errc
 {
   runtime,
@@ -158,7 +155,74 @@ enum class errc
 
 namespace detail {
 
+template <typename...>
+struct type_set : std::true_type {};
+
+template <typename T, typename... Ts>
+struct type_set<T,Ts...>
+{
+  static const bool value = (!std::is_same_v<T,Ts> && ...)
+                            && type_set<Ts...>::value;
+};
+
+template <typename... Ts>
+constexpr bool type_set_v = type_set<Ts...>::value;
+
 template <typename> struct property_query;
+
+} // namespace detail
+
+class property_list
+{
+public:
+
+  template <typename... Properties>
+    requires std::conjunction_v<is_property<Properties>...> &&
+             detail::type_set_v<Properties...>
+  property_list(Properties... props) : vs_{v_t{props}...} {}
+
+//  bool operator==(const property_list& ps) const  { return vs_ == ps.vs_; }
+
+private:
+
+  template <typename, int dims, typename>
+  requires(dims==1||dims==2||dims==3)
+  friend class buffer;
+
+  template <typename Property>
+  friend class detail::property_query;
+
+  template <typename Property>
+  bool has_property() const noexcept
+  {
+    for (const auto& v : vs_)
+      if (holds_alternative<Property>(v))
+        return true;
+    return false;
+  }
+
+  template <typename Property>
+  Property get_property(sycl::exception& e) const
+  {
+    for (const auto& v : vs_)
+      if (holds_alternative<Property>(v))
+        return std::get<Property>(v);
+
+    throw e;
+  }
+
+  using v_t = std::variant<property::buffer::use_host_ptr,
+                           property::buffer::use_mutex,
+                           property::buffer::context_bound,
+                           property::no_init>;
+
+//  bool operator==(const property_list&) const = default;
+  //friend bool operator==(const property_list&, const property_list&) = default;
+
+  std::vector<v_t> vs_;
+};
+
+namespace detail {
 
 std::string errc_to_string(const errc ec)
 {
@@ -185,6 +249,34 @@ std::string errc_to_string(const errc ec)
   return s;
 }
 
+template <typename SyclObject>
+class property_query
+{
+public:
+  template <typename Property>
+  requires(is_property_of_v<Property, SyclObject>)
+  bool has_property() const noexcept {
+    return ps_.has_property<Property>();
+  }
+
+  template <typename Property>
+  requires(is_property_of_v<Property, SyclObject>)
+  Property get_property() const
+  {
+    std::string son = typeid(SyclObject).name();
+    sycl::exception e{errc::invalid, son + " was not constructed with " +
+                                     typeid(Property).name() + "property."};
+    return ps_.get_property<Property>(e);
+  }
+
+//  bool operator==(const property_query&) const = default;
+
+//  friend bool operator==(const property_query&) = default; // ICE
+//  friend bool operator==(const property_query&, const property_query&) = default; // ICE
+
+  property_list ps_{};
+};
+
 template <typename> struct is_buffer   : std::false_type {};
 template <typename> struct is_accessor : std::false_type {};
 template <typename T, int dims, typename AllocT>
@@ -200,6 +292,9 @@ struct is_accessor<accessor<dataT,dims,AccessMode,AccessTarget,isPlaceholder>>
   : std::true_type {};
 
 } // namespace detail
+
+template <>
+struct is_property<property::buffer::use_host_ptr>  : std::true_type {};
 
 template <typename T>
 struct is_property_of<property::buffer::use_host_ptr,T>
@@ -594,68 +689,6 @@ private:
   std::vector<device> devices_;
 };
 
-namespace detail {
-
-template <typename...>
-struct type_set : std::true_type {};
-
-template <typename T, typename... Ts>
-struct type_set<T,Ts...>
-{
-  static const bool value = (!std::is_same_v<T,Ts> && ...)
-                            && type_set<Ts...>::value;
-};
-
-template <typename... Ts>
-constexpr bool type_set_v = type_set<Ts...>::value;
-
-} // namespace detail
-
-class property_list
-{
-public:
-
-  template <typename... Properties>
-    requires std::conjunction_v<is_property<Properties>...> &&
-             detail::type_set_v<Properties...>
-  property_list(Properties... props) : vs_{v_t{props}...} {}
-
-private:
-
-  template <typename, int dims, typename>
-  requires(dims==1||dims==2||dims==3)
-  friend class buffer;
-
-  template <typename Property>
-  friend class detail::property_query;
-
-  template <typename Property>
-  bool has_property() const noexcept
-  {
-    for (const auto& v : vs_)
-      if (holds_alternative<Property>(v))
-        return true;
-    return false;
-  }
-
-  template <typename Property>
-  Property get_property(sycl::exception& e) const
-  {
-    for (const auto& v : vs_)
-      if (holds_alternative<Property>(v))
-        return std::get<Property>(v);
-
-    throw e;
-  }
-
-  using v_t = std::variant<property::buffer::use_host_ptr,
-                           property::buffer::use_mutex,
-                           property::buffer::context_bound,
-                           property::no_init>;
-
-  std::vector<v_t> vs_;
-};
-
 using async_handler = std::function<void(sycl::exception_list)>;
 
 namespace detail {
@@ -666,7 +699,7 @@ struct device_allocation {
 };
 }
 
-class context
+class context // : public detail::property_query<context>
 {
   platform platform_;
   // map between original buffer address, and the device allocation
@@ -677,7 +710,9 @@ class context
 
 public:
 
-  explicit context(const property_list &ps = {}) { }
+  explicit context(const property_list &ps = {})
+//    : detail::property_query<context>{ps} { }
+  {}
   explicit context(async_handler ah, const property_list &ps = {})
   { assert(0); }
   explicit context(const device &dev, const property_list &ps = {})
@@ -688,8 +723,6 @@ public:
                    const property_list &ps = {}) { assert(0); }
   explicit context(const std::vector<device> &deviceList, async_handler ah,
                    const property_list &ps = {}) { assert(0); }
-
-  /* -- property interface members -- */
 
   /* -- common reference semantics -- */
 
@@ -715,10 +748,8 @@ public:
 };
 
 namespace detail {
-  context g_context{}; // default context
-}
 
-namespace detail {
+context g_context{}; // default context
 
 class sycl_error_category : public std::error_category
 {
@@ -2344,36 +2375,40 @@ public:
 // Section 4.6.5 Queue interface
 // All constructors will implicitly construct a SYCL platform, device
 // and context in order to facilitate the construction of the queue.
-class queue
+class queue : public detail::property_query<queue>
 {
   device dev_;
-  context& context_{detail::g_context};
+  context context_{detail::g_context};
 
 public:
   friend class handler; // handler access to q_
 
-  explicit queue(const property_list &ps = {}) { }
+  explicit queue(const property_list &ps = {})
+    : detail::property_query<queue>{ps} { }
 
-  explicit queue(const async_handler &ah, const property_list &ps = {}) { }
+  explicit queue(const async_handler &ah, const property_list &ps = {})
+    : detail::property_query<queue>{ps} { assert(0); }
 
   template <typename DeviceSelector>
   explicit queue(const DeviceSelector &sel,
-                 const property_list &ps = {}) { }
+                 const property_list &ps = {}) { assert(0); }
 
   template <typename DeviceSelector>
   explicit queue(const DeviceSelector &sel,
                  const async_handler &asyncHandler,
-                 const property_list &ps = {}) { }
+                 const property_list &ps = {}) { assert(0); }
 
-  explicit queue(const device &syclDevice, const property_list &propList = {})
-  { assert(0); }
+  explicit queue(const device &syclDevice, const property_list &ps = {})
+    : dev_{syclDevice}, detail::property_query<queue>{ps} { assert(0); }
 
   explicit queue(const device &syclDevice, const async_handler &asyncHandler,
-                 const property_list &propList = {}) { assert(0); }
+                 const property_list &ps = {})
+    : dev_{syclDevice}, detail::property_query<queue>{ps} { assert(0); }
 
   template <typename DeviceSelector>
   explicit queue(const context &c, const DeviceSelector &sel,
-                 const property_list &ps = {}) { assert(0); }
+                 const property_list &ps = {})
+    : context_{c}, detail::property_query<queue>{ps} { assert(0); }
 
   template <typename DeviceSelector>
   explicit queue(const context &c, const DeviceSelector &sel,
@@ -2381,7 +2416,9 @@ public:
                  const property_list &ps = {}) { assert(0); }
 
   explicit queue(const context &c, const device &syclDevice,
-                 const property_list &ps = {}) { assert(0); }
+                 const property_list &ps = {})
+    : context_{c}, dev_{syclDevice}, detail::property_query<queue>{ps}
+  { assert(0); }
 
   explicit queue(const context &c, const device &syclDevice,
                  const async_handler &asyncHandler,
@@ -2389,7 +2426,17 @@ public:
 
   ~queue() { wait(); }
 
-  backend get_backend() const noexcept { assert(0); return {}; }
+  /* -- common reference semantics -- */
+
+  queue(const queue&)                                = default;
+  queue(const queue&&)                               = default;
+  queue& operator=(queue&&)                          = default;
+  queue& operator=(const queue&)                     = default;
+  //~queue()                                           = default;
+  friend bool operator==(const queue&, const queue&) = default;
+  friend bool operator!=(const queue&, const queue&) = default;
+
+  backend get_backend() const noexcept { return context_.get_backend(); }
   context get_context() const { return context_; }
   device get_device() const { return dev_; }
   bool is_in_order() const { assert(0); return {}; }
@@ -2634,29 +2681,6 @@ inline bool is_aligned(const void * ptr, std::uintptr_t alignment) noexcept {
   return !(iptr % alignment);
 };
 
-template <typename SyclObject>
-struct property_query
-{
-  template <typename Property>
-  requires(is_property_of_v<Property, SyclObject>)
-  bool has_property() const noexcept {
-    return ps_.has_property<Property>();
-  }
-
-  template <typename Property>
-  requires(is_property_of_v<Property, SyclObject>)
-  Property get_property() const
-  {
-    std::string son = typeid(SyclObject).name();
-    sycl::exception e{errc::invalid, son + " was not constructed with " +
-                                     typeid(Property).name() + "property."};
-    return ps_.get_property<Property>(e);
-
-  }
-
-  property_list ps_{};
-};
-
 } // namespace detail
 
 template <typename T, int dims, typename AllocT>
@@ -2678,7 +2702,8 @@ public:
   buffer(const range<dims> &r, const property_list &ps = {})
     : range_{r},
       h_data_{alloc_.allocate(r.size()),
-              [this](auto* p){ alloc_.deallocate(p, range_.size()); }} {}
+              [this](auto* p){ alloc_.deallocate(p, range_.size()); }},
+      detail::property_list<buffer>{ps} {}
 
   buffer(const range<dims> &r, AllocT alloc, const property_list &ps = {})
   { assert(0); }
@@ -2925,8 +2950,8 @@ namespace detail
 template <typename, int, access_mode>
 struct indexer;
 
-template <typename dataT, access_mode accessmode>
-struct indexer<dataT, 1, accessmode>
+template <typename dataT, access_mode AccessMode>
+struct indexer<dataT, 1, AccessMode>
 {
   dataT &operator[](size_t index) const { return data_[index]; }
 
@@ -2938,10 +2963,10 @@ struct indexer<dataT, 1, accessmode>
   const range<1> range_;
 };
 
-template <typename dataT, access_mode accessmode>
-struct indexer<dataT, 2, accessmode>
+template <typename dataT, access_mode AccessMode>
+struct indexer<dataT, 2, AccessMode>
 {
-  indexer<dataT, 1, accessmode> operator[](size_t index) const {
+  indexer<dataT, 1, AccessMode> operator[](size_t index) const {
 #ifdef __NVCOMPILER
     return {data_ + range_[1] * index, {range_[1]}};
 #else
@@ -2967,7 +2992,8 @@ template <
   access::target AccessTarget,
   access::placeholder isPlaceholder
 >
-class accessor
+class accessor :
+  public detail::property_query<accessor<dataT,dims,AccessMode,AccessTarget,isPlaceholder>>
 {
 public:
 
@@ -3012,7 +3038,7 @@ public:
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            const property_list &ps = {})
     requires(dims>0)
-    : range_{buf.range_}, offset_{}
+    : range_{buf.range_}, offset_{}, detail::property_query<accessor>{ps}
   {
     auto& allocs = cgh.context_.allocations_;
 //    if (allocs.find(buf.original_) == allocs.end())
@@ -3084,7 +3110,8 @@ public:
            range<dims> accessRange, id<dims> accessOffset,
            const property_list &ps = {})
     requires(dims>0)
-    : data_{buf.data_}, range_{accessRange}, offset_{accessOffset}
+    : data_{buf.data_}, range_{accessRange}, offset_{accessOffset},
+      detail::property_query<accessor>{ps}
   { assert(0); buf.pq_ = &cgh.q_; }
 
   template <typename AllocT, typename TagT>
@@ -3123,10 +3150,10 @@ public:
   template <int D, bool O>
   reference operator[](item<D, O> i) const { return (*this)[i.get_id()]; }
 
-  // Available only when: (accessMode != access_mode::atomic && dimensions == 1)
+  // Available only when: (AccessMode != access_mode::atomic && dimensions == 1)
   reference operator[](size_t index) const { return data_[index]; }
 
-  // accessMode == access_mode::read
+  // AccessMode == access_mode::read
   /*const_reference operator[](id<dims> index) const
   {
   }*/
@@ -3162,11 +3189,11 @@ public:
 #endif
 
   /* Deprecated: Available only when:
-     (accessMode == access_mode::atomic && dimensions == 0) */
+     (AccessMode == access_mode::atomic && dimensions == 0) */
   //operator cl::sycl::atomic<dataT,access::address_space::global_space> () const;
 
   /* Deprecated: Available only when:
-     (accessMode == access_mode::atomic && dimensions == 1) */
+     (AccessMode == access_mode::atomic && dimensions == 1) */
   //cl::sycl::atomic<dataT, access::address_space::global_space> operator[](
   //  id<dimensions> index) const;
 
@@ -3196,21 +3223,22 @@ public:
 template <
   typename dataT,
   int dims,
-  access_mode accessmode
+  access_mode AccessMode
 >
-class host_accessor
+class host_accessor :
+  public detail::property_query<host_accessor<dataT,dims,AccessMode>>
 {
 public:
 
   using value_type =
-    std::conditional_t<accessmode == access_mode::read, const dataT, dataT>;
+    std::conditional_t<AccessMode == access_mode::read, const dataT, dataT>;
   using reference =
-    std::conditional_t<accessmode == access_mode::read, const dataT&, dataT&>;
+    std::conditional_t<AccessMode == access_mode::read, const dataT&, dataT&>;
   using const_reference = const dataT&;
 
 #if 0
   using iterator =
-  // const dataT* when (accessmode == access::mode::read),
+  // const dataT* when (AccessMode == access::mode::read),
   __pointer_type__; // dataT* otherwise
   using const_iterator = const dataT *;
   using difference_type =
@@ -3228,7 +3256,8 @@ public:
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, const property_list &ps = {})
     requires(dims>0)
-    : h_data_{buf.h_data_}, d_data_{buf.d_data_}, range_{buf.range_}
+    : h_data_{buf.h_data_}, d_data_{buf.d_data_}, range_{buf.range_},
+      detail::property_query<host_accessor>{ps}
   {
     // if (buf.pq_) buf.pq_->wait();
     buf.wait_and_copy_back_data();
@@ -3249,8 +3278,7 @@ public:
   template <typename AllocT, typename TagT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
                 TagT tag, const property_list &ps = {})
-    requires(dims>0)
-    : host_accessor{buf, accessRange, ps} {}
+    requires(dims>0) : host_accessor{buf, accessRange, ps} {}
 
   template <typename AllocT>
   host_accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
@@ -3297,14 +3325,14 @@ public:
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   template <int d = dims>
   requires(d==2)
-  const detail::indexer<dataT, dims-1, accessmode>
+  const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const {
     return {{h_data_, h_data_.get() + range_[1] * index}, {range_[1]}};
   }
 
   template <int d = dims>
   requires(d==3)
-  const detail::indexer<dataT, dims-1, accessmode>
+  const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const {
     return {{h_data_, h_data_.get() + index * range_[1] * range_[2]},
             {range_[1], range_[2]}};
