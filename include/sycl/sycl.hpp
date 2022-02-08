@@ -3050,7 +3050,7 @@ public:
   {
     auto& allocs = cgh.context_.allocations_;
 //    if (allocs.find(buf.original_) == allocs.end())
-    if (allocs.contains(buf.original_))
+    if (!allocs.contains(buf.original_))
     {
       std::cerr << "Allocating device memory.\n";
       cudaMalloc(&buf.d_data_, byte_size());
@@ -4024,6 +4024,7 @@ const stream_manipulator defaultfloat = stream_manipulator::defaultfloat;
 class stream : public detail::property_query<stream>
 {
   size_t tbs_, wibs_;
+  stream* original_{this}; // So: this class is a copy if original_ != this
 
 public:
 
