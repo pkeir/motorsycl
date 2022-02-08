@@ -2604,16 +2604,14 @@ void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
 {
-  auto f = [=]() {
-    using item_t = item<dims,false>;
-    id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{})};
-    detail::iterq begin{item_t{id<dims>{},r}}, end{item_t{stop,r}};
-    std::for_each(detail::g_pol, begin, end, k);
-  };
-  q_.stdq_.push(f);
-}
+  static const auto is = std::make_index_sequence<dims>{};
+  range<dims> nt;  // 128,128,128
 
-#ifdef __NVCOMPILER
+  range<dims> nb = detail::zip_with<range<dims>>(std::divides{}, r, nt);
+  const dim3 nblocks  = detail::repack<dim3>(nb, is);
+  const dim3 nthreads = detail::repack<dim3>(r, is);
+  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
+}
 
 template <int dims, typename K>
 void handler::parallel_for(nd_range<dims> r, const K& k)
@@ -2625,22 +2623,6 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
 
   detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
 }
-
-#else
-
-template <int dims, typename K>
-void handler::parallel_for(nd_range<dims> r, const K& k)
-{
-  auto f = [=]() {
-    using item_t = nd_item<dims>;
-    id stop{detail::make_stop(r.get_global_range()[0],std::make_index_sequence<dims>{})};
-    detail::iterq begin{item_t{id<dims>{},r}}, end{item_t{stop,r}};
-    std::for_each(detail::g_pol, begin, end, k);
-  };
-  q_.stdq_.push(f);
-}
-
-#endif
 
 // Deprecated in SYCL 2020
 template <int dims, typename K>
@@ -3364,6 +3346,10 @@ public:
             {range_[1], range_[2]}};
   }
 
+  std::add_pointer_t<value_type> get_pointer() const noexcept {
+    return h_data_.get();
+  }
+
 #if 0
   iterator data() const noexcept { assert(0); return {}; }
   iterator begin() const noexcept { assert(0); return {}; }
@@ -4001,6 +3987,81 @@ float dot(float3 p0, float3 p1) {
 //double length(gengeodouble p)
 float length(float3 p) {
   return sycl::sqrt(p.x()*p.x()+p.y()*p.y()+p.z()*p.z());
+}
+
+enum class stream_manipulator {
+  flush,
+  dec,
+  hex,
+  oct,
+  noshowbase,
+  showbase,
+  noshowpos,
+  showpos,
+  endl,
+  fixed,
+  scientific,
+  hexfloat,
+  defaultfloat
+};
+
+const stream_manipulator flush = stream_manipulator::flush;
+const stream_manipulator dec = stream_manipulator::dec;
+const stream_manipulator hex = stream_manipulator::hex;
+const stream_manipulator oct = stream_manipulator::oct;
+const stream_manipulator noshowbase = stream_manipulator::noshowbase;
+const stream_manipulator showbase = stream_manipulator::showbase;
+const stream_manipulator noshowpos = stream_manipulator::noshowpos;
+const stream_manipulator showpos = stream_manipulator::showpos;
+const stream_manipulator endl = stream_manipulator::endl;
+const stream_manipulator fixed = stream_manipulator::fixed;
+const stream_manipulator scientific = stream_manipulator::scientific;
+const stream_manipulator hexfloat = stream_manipulator::hexfloat;
+const stream_manipulator defaultfloat = stream_manipulator::defaultfloat;
+//__precision_manipulator__ setprecision(int precision);
+//__width_manipulator__ setw(int width);
+
+class stream : public detail::property_query<stream>
+{
+  size_t tbs_, wibs_;
+
+public:
+
+  stream(size_t totalBufferSize, size_t workItemBufferSize, handler& cgh,
+         const property_list &ps = {})
+    : detail::property_query<stream>{ps}, tbs_{totalBufferSize},
+      wibs_{workItemBufferSize} {}
+
+  /* -- common reference semantics -- */
+  // ... though not listed at 4.5.2 ?
+
+  stream(const stream&)            = default;
+  stream(stream&&)                 = default;
+  stream& operator=(const stream&) = default;
+  stream& operator=(stream&&)      = default;
+  ~stream()                        = default;
+  friend bool operator==(const stream& lhs, const stream& rhs) {
+    return lhs.original_ == rhs.original_;
+  }
+  friend bool operator!=(const stream& lhs, const stream& rhs) {
+    return !(lhs==rhs);
+  }
+
+  size_t size() const noexcept { return tbs_; }
+
+  // Deprecated
+  [[deprecated]] size_t get_size() const { return size(); }
+
+  size_t get_work_item_buffer_size() const { return wibs_; }
+
+  [[deprecated]]
+  size_t get_max_statement_size() const { return get_work_item_buffer_size(); }
+};
+
+template <typename T>
+const stream& operator<<(const stream& os, const T& rhs) {
+  assert(0);
+  return os;
 }
 
 } // namespace sycl
