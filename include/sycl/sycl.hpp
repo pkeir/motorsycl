@@ -2963,11 +2963,7 @@ struct indexer<dataT, 1, AccessMode>
 {
   dataT &operator[](size_t index) const { return data_[index]; }
 
-#ifdef __NVCOMPILER
   dataT* data_{};
-#else
-  std::shared_ptr<dataT[]> data_;
-#endif
   const range<1> range_;
 };
 
@@ -2975,18 +2971,10 @@ template <typename dataT, access_mode AccessMode>
 struct indexer<dataT, 2, AccessMode>
 {
   indexer<dataT, 1, AccessMode> operator[](size_t index) const {
-#ifdef __NVCOMPILER
     return {data_ + range_[1] * index, {range_[1]}};
-#else
-    return {{data_, data_.get() + range_[1] * index}, {range_[1]}};
-#endif
   }
 
-#ifdef __NVCOMPILER
   dataT* data_{};
-#else
-  std::shared_ptr<dataT[]> data_;
-#endif
   const range<2> range_;
 };
 
@@ -3188,11 +3176,7 @@ public:
   template <int d = dims>
   std::enable_if_t<(d==3), const detail::indexer<dataT, dims-1, AccessMode>>
   operator[](size_t index) const {
-#ifdef __NVCOMPILER
     return {data_ + index * range_[1] * range_[2], {range_[1], range_[2]}};
-#else
-    return {{data_, data_.get() + index * range_[1] * range_[2]}, {range_[1], range_[2]}};
-#endif
   }
 #endif
 
@@ -3268,7 +3252,7 @@ public:
       detail::property_query<host_accessor>{ps}
   {
     // if (buf.pq_) buf.pq_->wait();
-    buf.wait_and_copy_back_data();
+    buf.wait_and_copy_back_data(); // no need to copy back to *user data*?
   }
 
   template <typename AllocT, typename TagT>
@@ -3335,14 +3319,14 @@ public:
   requires(d==2)
   const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const {
-    return {{h_data_, h_data_.get() + range_[1] * index}, {range_[1]}};
+    return {h_data_.get() + range_[1] * index, {range_[1]}};
   }
 
   template <int d = dims>
   requires(d==3)
   const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const {
-    return {{h_data_, h_data_.get() + index * range_[1] * range_[2]},
+    return {h_data_.get() + index * range_[1] * range_[2],
             {range_[1], range_[2]}};
   }
 
