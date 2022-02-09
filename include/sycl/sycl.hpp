@@ -1414,9 +1414,8 @@ namespace sycl {
 
 namespace detail {
 
-template <int dims>
-nd_item<dims>
-mk_nd_item(const id<dims>& offset) { return {offset}; }
+template <int, typename K, typename I = void>
+__global__ void cuda_kernel_launch(const K);
 
 } // namespace detail
 
@@ -1426,9 +1425,9 @@ class nd_item
 {
   id<dims> offset_;
 
-  nd_item(const id<dims>& offset) : offset_{offset} {}
-  template <int d>
-  friend nd_item<d> detail::mk_nd_item(const id<d>&);
+  nd_item(const id<dims>& offset = {}) : offset_{offset} {}
+  template <int, typename K, typename>
+  friend __global__ void detail::cuda_kernel_launch(const K);
 
 public:
 
@@ -2570,35 +2569,42 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
 template <typename U, typename A, typename T, T... Is>
 constexpr U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
 
-template <int dims, typename K>
+template <int dims, typename K, typename I>
 __global__ void cuda_kernel_launch(const K k)
 {
-  k(mk_nd_item(id<dims>{})); // The id<dims>{} parameter sets the offset to zero
-}
-
-template <typename K>
-__global__ void cuda_kernel_launch_single_task(const K k)
-{
-  k();
+  if constexpr (std::is_same_v<I,void>) {
+    k();
+  } else if constexpr (std::is_same_v<I,item<dims>>) {
+    k(nd_item<dims>{}.get_global_id());
+  } else if constexpr (std::is_same_v<I,nd_item<dims>>) {
+    k(nd_item<dims>{});
+  }
 }
 
 } // namespace detail
 
 template <typename K>
 void handler::single_task(const K& k) {
-  detail::cuda_kernel_launch_single_task<K><<<1,1>>>(k);
+  detail::cuda_kernel_launch<0,K,void><<<1,1>>>(k);
 }
 
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
 {
-  auto f = [=]() {
+/*  auto f = [=]() {
     id<dims> extent{r};
     id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{})};
     detail::iterq begin{id<dims>{},extent}, end{stop,extent};
     std::for_each(detail::g_pol, begin, end, k);
   };
-  q_.stdq_.push(f);
+  q_.stdq_.push(f);*/
+  static const auto is = std::make_index_sequence<dims>{};
+  range<dims> nt;  // 128,128,128
+
+  range<dims> nb = detail::zip_with<range<dims>>(std::divides{}, r, nt);
+  const dim3 nblocks  = detail::repack<dim3>(nb, is);
+  const dim3 nthreads = detail::repack<dim3>(r, is);
+  detail::cuda_kernel_launch<dims,K,id<dims>><<<nblocks,nthreads>>>(k);
 }
 
 template <int dims, typename K>
@@ -2610,7 +2616,7 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
   range<dims> nb = detail::zip_with<range<dims>>(std::divides{}, r, nt);
   const dim3 nblocks  = detail::repack<dim3>(nb, is);
   const dim3 nthreads = detail::repack<dim3>(r, is);
-  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
+  detail::cuda_kernel_launch<dims,K,item<dims>><<<nblocks,nthreads>>>(k);
 }
 
 template <int dims, typename K>
@@ -2619,22 +2625,16 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
   static const auto is = std::make_index_sequence<dims>{};
   const dim3 nblocks  = detail::repack<dim3>(r.get_group_range(), is);
   const dim3 nthreads = detail::repack<dim3>(r.get_local_range(), is);
-  const dim3 global   = detail::repack<dim3>(r.get_global_range(), is);
+  //const dim3 global   = detail::repack<dim3>(r.get_global_range(), is);
 
-  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
+  detail::cuda_kernel_launch<dims,K,nd_item<dims>><<<nblocks,nthreads>>>(k);
 }
 
 // Deprecated in SYCL 2020
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
 {
-  auto f = [=]() {
-    using item_t = item<dims,true>;
-    id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{},o)};
-    detail::iterq begin{item_t{o,r,o}}, end{item_t{stop,r,o}};
-    std::for_each(detail::g_pol, begin, end, k);
-  };
-  q_.stdq_.push(f);
+  assert(0);
 }
 
 // Does parallel_for with offset support using id?
