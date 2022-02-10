@@ -2583,36 +2583,37 @@ __global__ void cuda_kernel_launch(const K k)
   k(nd_item<dims>{});
 }
 
-// This avoid the if statement, *and* the transfer of size_t parameter (#3)
+template <int dims>
+inline id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
+{
+  if      constexpr (dims==1)
+    return {thread_num};
+  else if constexpr (dims==2)
+    return {thread_num / r[1], thread_num % r[1]};
+  else if constexpr (dims==3)
+    return {thread_num / (r[1] * r[2]), thread_num / r[1], thread_num % r[2]};
+}
+
+// This avoids the if statement; *and* the transfer of size_t parameter (#3)
 template <int dims, typename K>
 __global__
 void cuda_kernel_launch_range(const K k, const range<dims> r)
 {
-  //k(nd_item<dims>{}.get_global_id());
-  auto nthreads = _BLOCKDIM_X * _GRIDDIM_X;
-  auto thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
-// 3D
-//  id<dims> i{thread_num/ (r[1] * r[2]), thread_num/ r[1], thread_num % r[2]};
-  id<2> i{thread_num / r[1], thread_num % r[1]};
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
-//  k(id<dims>{});// initialise id<dims> properly
-  k(i);
+  k(nonlinear_id(r, thread_num));
 }
 
 template <int dims, typename K>
 __global__
 void cuda_kernel_launch_range(const K k, const range<dims> r, const size_t sz)
 {
-  auto nthreads = _BLOCKDIM_X * _GRIDDIM_X;
-  auto thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
-// 3D
-//  id<dims> i{thread_num/ (r[1] * r[2]), thread_num/ r[1], thread_num % r[2]};
-  //std::apply([](const auto& ...xs) { return (xs * ...); },
-   // static_cast<typename range::array>(*this));
-  id<2> i{thread_num / r[1], thread_num % r[1]};
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
   if (thread_num < sz)
-    k(i);
+    k(nonlinear_id(r, thread_num));
 }
 
 template <typename K>
