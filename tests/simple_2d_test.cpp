@@ -48,10 +48,8 @@ bool simple_2d_test()
         k1 = k2;
         k2 = id<2>{};
         k2 = k1 + id<2>{};
-#ifndef __NVCOMPILER      // NVIDIA TPR #29962
         j = j==j ? j : j;
         j = j!=j ? j : j;
-#endif
         j = (j+j) + (j-j) + (j*j) + (j/j) + (j%j) + (j<<j) + (j>>j) + (j&j);
         j = (j|j) + (j^j) + (j&&j) + (j||j) + (j<j) + (j>j) + (j<=j) + (j>=j);
 #ifndef __COMPUTECPP__

@@ -2607,6 +2607,8 @@ void cuda_kernel_launch_range(const K k, const range<dims> r, const size_t sz)
   auto thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 // 3D
 //  id<dims> i{thread_num/ (r[1] * r[2]), thread_num/ r[1], thread_num % r[2]};
+  //std::apply([](const auto& ...xs) { return (xs * ...); },
+   // static_cast<typename range::array>(*this));
   id<2> i{thread_num / r[1], thread_num % r[1]};
 
   if (thread_num < sz)
