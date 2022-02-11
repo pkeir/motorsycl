@@ -170,6 +170,17 @@ constexpr bool type_set_v = type_set<Ts...>::value;
 
 template <typename> struct property_query;
 
+template <int, typename K>
+__global__ void cuda_kernel_launch(const K);
+
+template <typename, int dims, typename K>
+__global__
+void cuda_kernel_launch_range(const K, const range<dims>);
+
+template <typename, int dims, typename K>
+__global__
+void cuda_kernel_launch_range(const K, const range<dims>, const size_t);
+
 } // namespace detail
 
 class property_list
@@ -1227,22 +1238,6 @@ public:
   { assert(0); }
 };
 
-namespace detail {
-
-template <int dims>
-item<dims,false>
-mk_item(const id<dims>& i, const range<dims>& r) {
-  return {i,r};
-}
-
-template <int dims>
-item<dims,true>
-mk_item(const id<dims>& i, const range<dims>& r, const id<dims>& o) {
-  return {i,r,o};
-}
-
-} // namespace detail
-
 // Section 4.9.1.4 item class
 template <int dims, bool>
 class item
@@ -1251,23 +1246,20 @@ class item
   range<dims> range_;
   id<dims> offset_;
 
-  template <int, bool> friend class item;
-
-  template <size_t, int dims_, bool with_offset_>
-  friend auto& get(item<dims_, with_offset_>&);
-  template <size_t, int dims_, bool with_offset_>
-  friend const auto& get(const item<dims_, with_offset_>&);
-  item() = default; // debug? remove ... yes, should be = delete
-  //size_t& operator[](int dim) { return id_[dim]; }
-
-  template <int D>
-  friend item<D,true> detail::mk_item(const id<D>&, const range<D>&, const id<D>&); // debug
-
   friend class handler;
-  item(const id<dims>& i, const range<dims>& range, const id<dims>& offset)
-    : id_{i}, range_{range}, offset_{offset} {}
+  template <int, bool> friend class item;
+  // does nvc++ need these!?:
+  template <typename, int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_range(const K, const range<dims_>);
+  template <typename, int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_range(const K, const range<dims_>,
+                                        const size_t);
 
 public:
+
+  item() = delete;
 
   id<dims> get_id() const { return id_; }
   size_t get_id(int dim) const { return id_[dim]; }
@@ -1299,20 +1291,18 @@ class item<dims,false>
   id<dims> id_;
   range<dims> range_;
 
-  template <size_t, int dims_, bool with_offset_>
-  friend auto& get(item<dims_, with_offset_>&);
-  template <size_t, int dims_, bool with_offset_>
-  friend const auto& get(const item<dims_, with_offset_>&);
-  item() = default;
-  //size_t& operator[](int dim) { return id_[dim]; }
-
-  template <int D>
-  friend item<D,false> detail::mk_item(const id<D>&, const range<D>&); // dbg
-
   friend class handler;
-  item(const id<dims>& i, const range<dims>& range) : id_{i}, range_{range} {}
+  template <typename, int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_range(const K, const range<dims_>);
+  template <typename, int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_range(const K, const range<dims_>,
+                                        const size_t);
 
 public:
+
+  item() = delete;
 
   id<dims> get_id() const { return id_; }
   size_t get_id(int dim) const { return id_[dim]; }
@@ -1322,7 +1312,6 @@ public:
   operator item<dims,true>() const { return {id_,range_,{}}; }
 
   operator size_t() const requires(dims==1) {
-    static_assert(dims==1);
     return id_[0];
   }
 
@@ -1411,21 +1400,6 @@ public:
 } // namespace sycl
 
 namespace sycl {
-
-namespace detail {
-
-template <int, typename K>
-__global__ void cuda_kernel_launch(const K);
-
-template <int dims, typename K>
-__global__
-void cuda_kernel_launch_range(const K, const range<dims>);
-
-template <int dims, typename K>
-__global__
-void cuda_kernel_launch_range(const K, const range<dims>, const size_t);
-
-} // namespace detail
 
 // Section 4.9.1.5 nd_item class
 template <int dims>
@@ -2592,28 +2566,37 @@ inline id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
     return {thread_num / r[1], thread_num % r[1]};
   else if constexpr (dims==3)
     return {thread_num / (r[1] * r[2]), thread_num / r[1], thread_num % r[2]};
+
+  __builtin_unreachable();
 }
 
 // This avoids the if statement; *and* the transfer of size_t parameter (#3)
-template <int dims, typename K>
+template <typename I, int dims, typename K>
 __global__
 void cuda_kernel_launch_range(const K k, const range<dims> r)
 {
   const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
   const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
-  k(nonlinear_id(r, thread_num));
+  if      constexpr (std::is_same_v<I,id<dims>>)
+    k(nonlinear_id(r, thread_num));
+  else if constexpr (std::is_same_v<I,item<dims>>)
+    k(nonlinear_id(r, thread_num),r);
 }
 
-template <int dims, typename K>
+template <typename I, int dims, typename K>
 __global__
 void cuda_kernel_launch_range(const K k, const range<dims> r, const size_t sz)
 {
   const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
   const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
-  if (thread_num < sz)
-    k(nonlinear_id(r, thread_num));
+  if (thread_num < sz) {
+    if      constexpr (std::is_same_v<I,id<dims>>)
+      k(nonlinear_id(r, thread_num));
+    else if constexpr (std::is_same_v<I,item<dims>>)
+      k(nonlinear_id(r, thread_num),r);
+  }
 }
 
 template <typename K>
@@ -2637,21 +2620,22 @@ void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
   const size_t rem = sz % nthreads.x;
   const dim3 nblocks{sz / nthreads.x + (rem ? 1 : 0)};
   if (rem)
-    detail::cuda_kernel_launch_range<dims,K><<<nblocks,nthreads>>>(k,r,sz);
+    detail::cuda_kernel_launch_range<id<dims>><<<nblocks,nthreads>>>(k,r,sz);
   else
-    detail::cuda_kernel_launch_range<dims,K><<<nblocks,nthreads>>>(k,r);
+    detail::cuda_kernel_launch_range<id<dims>><<<nblocks,nthreads>>>(k,r);
 }
 
 template <int dims, typename K>
 void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
 {
-  static const auto is = std::make_index_sequence<dims>{};
-  range<dims> nt;  // 128,128,128
-
-  range<dims> nb = detail::zip_with<range<dims>>(std::divides{}, r, nt);
-  const dim3 nblocks  = detail::repack<dim3>(nb, is);
-  const dim3 nthreads = detail::repack<dim3>(r, is);
-  detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
+  const dim3 nthreads{1024}; // cudaOccupancyMaxPotentialBlockSize?
+  const size_t sz = r.size();
+  const size_t rem = sz % nthreads.x;
+  const dim3 nblocks{sz / nthreads.x + (rem ? 1 : 0)};
+  if (rem)
+    detail::cuda_kernel_launch_range<item<dims>><<<nblocks,nthreads>>>(k,r,sz);
+  else
+    detail::cuda_kernel_launch_range<item<dims>><<<nblocks,nthreads>>>(k,r);
 }
 
 template <int dims, typename K>
