@@ -1,7 +1,7 @@
 #ifndef _MOTORSYCL_HPP_
 #define _MOTORSYCL_HPP_
 
-// Copyright (c) 2020-2021 Paul Keir, University of the West of Scotland.
+// Copyright (c) 2020-2022 Paul Keir, University of the West of Scotland.
 
 #define __MOTORSYCL__
 #define SYCL_LANGUAGE_VERSION 202001
@@ -47,7 +47,7 @@ template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
-template <int = 1, bool with_offset = true> class item;
+template <int = 1, bool = true> class item;
 template <int = 1> class nd_item;
 template <typename, int> class vec;
 enum class aspect;
@@ -173,13 +173,28 @@ template <typename> struct property_query;
 template <int, typename K>
 __global__ void cuda_kernel_launch(const K);
 
-template <typename, int dims, typename K>
-__global__
-void cuda_kernel_launch_range(const K, const range<dims>);
+template <int dims, typename K>
+__global__ void cuda_kernel_launch_id(const K, const range<dims>);
 
-template <typename, int dims, typename K>
+template <int dims, typename K>
+__global__ void cuda_kernel_launch_id(const K, const range<dims>, const size_t);
+
+template <int dims, typename K>
 __global__
-void cuda_kernel_launch_range(const K, const range<dims>, const size_t);
+void cuda_kernel_launch_item(const K, const range<dims>);
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K, const range<dims>, const size_t);
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K, const id<dims>, const range<dims>);
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K, const id<dims>,
+                             const range<dims>, const size_t);
 
 } // namespace detail
 
@@ -1238,96 +1253,6 @@ public:
   { assert(0); }
 };
 
-// Section 4.9.1.4 item class
-template <int dims, bool>
-class item
-{
-  id<dims> id_;
-  range<dims> range_;
-  id<dims> offset_;
-
-  friend class handler;
-  template <int, bool> friend class item;
-  // does nvc++ need these!?:
-  template <typename, int dims_, typename K>
-  friend __global__
-  void detail::cuda_kernel_launch_range(const K, const range<dims_>);
-  template <typename, int dims_, typename K>
-  friend __global__
-  void detail::cuda_kernel_launch_range(const K, const range<dims_>,
-                                        const size_t);
-
-public:
-
-  item() = delete;
-
-  id<dims> get_id() const { return id_; }
-  size_t get_id(int dim) const { return id_[dim]; }
-  size_t operator[](int dim) const { return id_[dim]; }
-  range<dims> get_range() const { return range_; }
-  size_t get_range(int dim) const { return range_[dim]; }
-  id<dims> get_offset() const { return offset_; }
-
-  operator size_t() const requires(dims==1) { return id_[0]; }
-
-  size_t get_linear_id() const
-  {
-    const auto& r = range_;
-         if constexpr (dims==1) return id_[0];
-    else if constexpr (dims==2) return id_[1] + id_[0]*r[1];
-    else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
-  }
-
-  // Common by-value semantics Section 4.5.3 Table 10
-  friend bool operator==(const item& x, const item& y) {
-    return x.id_==y.id_ && x.range_==y.range_ && x.offset_==y.offset_;
-  }
-  friend bool operator!=(const item& x, const item& y) { return !(x==y); }
-};
-
-template <int dims>
-class item<dims,false>
-{
-  id<dims> id_;
-  range<dims> range_;
-
-  friend class handler;
-  template <typename, int dims_, typename K>
-  friend __global__
-  void detail::cuda_kernel_launch_range(const K, const range<dims_>);
-  template <typename, int dims_, typename K>
-  friend __global__
-  void detail::cuda_kernel_launch_range(const K, const range<dims_>,
-                                        const size_t);
-
-public:
-
-  item() = delete;
-
-  id<dims> get_id() const { return id_; }
-  size_t get_id(int dim) const { return id_[dim]; }
-  size_t operator[](int dim) const { return id_[dim]; }
-  range<dims> get_range() const { return range_; }
-  size_t get_range(int dim) const { return range_[dim]; }
-  operator item<dims,true>() const { return {id_,range_,{}}; }
-
-  operator size_t() const requires(dims==1) {
-    return id_[0];
-  }
-
-  size_t get_linear_id() const {
-    const auto& r = range_;
-         if constexpr (dims==1) return id_[0];
-    else if constexpr (dims==2) return id_[1] + id_[0]*r[1];
-    else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
-  }
-
-  friend bool operator==(const item& x, const item& y) {
-    return x.id_==y.id_ && x.range_==y.range_;
-  }
-  friend bool operator!=(const item& x, const item& y) { return !(x==y); }
-};
-
 template <int dims>
 requires(dims==1||dims==2||dims==3)
 class id : public std::array<std::size_t, dims>
@@ -1364,6 +1289,85 @@ public:
 id(std::size_t) -> id<1>;
 id(std::size_t, std::size_t) -> id<2>;
 id(std::size_t, std::size_t, std::size_t) -> id<3>;
+
+// Section 4.9.1.4 item class
+template <int dims, bool WithOffset>
+class item
+{
+  id<dims> id_;
+  range<dims> range_;
+  id<dims> offset_;
+
+  friend class handler;
+  template <int, bool> friend class item; // for the conversion operator
+
+  template <int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_item(const K, const range<dims_>);
+
+  template <int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_item(const K, const range<dims_>,
+                                       const size_t);
+
+  template <int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_item(const K, const id<dims_>,
+                                       const range<dims_>);
+
+  template <int dims_, typename K>
+  friend __global__
+  void detail::cuda_kernel_launch_item(const K, const id<dims_>,
+                                       const range<dims_>, const size_t);
+
+  item(const id<dims>& i, const range<dims>& r)
+    requires(!WithOffset) : id_{i}, range_{r} {}
+  item(const id<dims>& i, const range<dims>& r, const id<dims>& o)
+    requires( WithOffset) : id_{i}, range_{r}, offset_{o} {}
+
+  item() = default;
+
+public:
+
+  //item() = delete;
+
+  id<dims> get_id() const { return id_; }
+  size_t get_id(int dim) const { return id_[dim]; }
+  size_t operator[](int dim) const requires(!WithOffset) { return id_[dim]; }
+  size_t operator[](int dim) const requires( WithOffset) {
+    return (id_ + offset_)[dim];
+  }
+  range<dims> get_range() const { return range_; }
+  size_t get_range(int dim) const { return range_[dim]; }
+
+  id<dims> get_offset() const requires(WithOffset) { return offset_; }
+  operator item<dims,true>() const requires(!WithOffset) {
+    return {id_,range_,{}};
+  }
+
+  /* nvc++ bug
+  operator size_t() const requires(dims==1 && !WithOffset) { return id_[0]; }
+  operator size_t() const requires(dims==1 &&  WithOffset) {
+    return id_[0] + offset_[0];
+  }*/
+  operator size_t() const requires(dims==1) {
+    return WithOffset ? (id_[0] + offset_[0]) : id_[0];
+  }
+
+  size_t get_linear_id() const
+  {
+    const auto& r = range_;
+         if constexpr (dims==1) return id_[0];
+    else if constexpr (dims==2) return id_[1] + id_[0]*r[1];
+    else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
+  }
+
+  // Common by-value semantics Section 4.5.3 Table 10
+  friend bool operator==(const item& x, const item& y) {
+    return x.id_==y.id_ && x.range_==y.range_ && x.offset_==y.offset_;
+  }
+  friend bool operator!=(const item& x, const item& y) { return !(x==y); }
+};
 
 // Section 4.9.1.2. nd_range class
 template <int dims>
@@ -2566,36 +2570,75 @@ inline id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
     return {thread_num / r[1], thread_num % r[1]};
   else if constexpr (dims==3)
     return {thread_num / (r[1] * r[2]), thread_num / r[1], thread_num % r[2]};
-
-  __builtin_unreachable();
 }
 
+// id<dims> index type:
 // This avoids the if statement; *and* the transfer of size_t parameter (#3)
-template <typename I, int dims, typename K>
+template <int dims, typename K>
 __global__
-void cuda_kernel_launch_range(const K k, const range<dims> r)
+void cuda_kernel_launch_id(const K k, const range<dims> r)
 {
   const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
   const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
-  if      constexpr (std::is_same_v<I,id<dims>>)
-    k(nonlinear_id(r, thread_num));
-  else if constexpr (std::is_same_v<I,item<dims>>)
-    k(nonlinear_id(r, thread_num),r);
+  k(nonlinear_id(r, thread_num));
 }
 
-template <typename I, int dims, typename K>
+template <int dims, typename K>
 __global__
-void cuda_kernel_launch_range(const K k, const range<dims> r, const size_t sz)
+void cuda_kernel_launch_id(const K k, const range<dims> r, const size_t sz)
 {
   const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
   const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
   if (thread_num < sz) {
-    if      constexpr (std::is_same_v<I,id<dims>>)
-      k(nonlinear_id(r, thread_num));
-    else if constexpr (std::is_same_v<I,item<dims>>)
-      k(nonlinear_id(r, thread_num),r);
+    k(nonlinear_id(r, thread_num));
+  }
+}
+
+// item<dims,false> index type:
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K k, const range<dims> r)
+{
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+
+  k(item<dims,false>{nonlinear_id(r, thread_num), r});
+}
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K k, const range<dims> r, const size_t sz)
+{
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+
+  if (thread_num < sz) {
+    k(item<dims,false>{nonlinear_id(r, thread_num), r});
+  }
+}
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K k, const id<dims> o, const range<dims> r)
+{
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+
+  k(item<dims,true>{nonlinear_id(r, thread_num), r, o});
+}
+
+template <int dims, typename K>
+__global__
+void cuda_kernel_launch_item(const K k, const id<dims> o,
+                             const range<dims> r, const size_t sz)
+{
+  const int nthreads = _BLOCKDIM_X * _GRIDDIM_X;
+  const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
+
+  if (thread_num < sz) {
+    k(item<dims,true>{nonlinear_id(r, thread_num), r, o});
   }
 }
 
@@ -2620,9 +2663,9 @@ void handler::parallel_for(range<dims> r, const K &k, const id<dims>)
   const size_t rem = sz % nthreads.x;
   const dim3 nblocks{sz / nthreads.x + (rem ? 1 : 0)};
   if (rem)
-    detail::cuda_kernel_launch_range<id<dims>><<<nblocks,nthreads>>>(k,r,sz);
+    detail::cuda_kernel_launch_id<<<nblocks,nthreads>>>(k,r,sz);
   else
-    detail::cuda_kernel_launch_range<id<dims>><<<nblocks,nthreads>>>(k,r);
+    detail::cuda_kernel_launch_id<<<nblocks,nthreads>>>(k,r);
 }
 
 template <int dims, typename K>
@@ -2633,9 +2676,9 @@ void handler::parallel_for(range<dims> r, const K &k, const item<dims>)
   const size_t rem = sz % nthreads.x;
   const dim3 nblocks{sz / nthreads.x + (rem ? 1 : 0)};
   if (rem)
-    detail::cuda_kernel_launch_range<item<dims>><<<nblocks,nthreads>>>(k,r,sz);
+    detail::cuda_kernel_launch_item<<<nblocks,nthreads>>>(k,r,sz);
   else
-    detail::cuda_kernel_launch_range<item<dims>><<<nblocks,nthreads>>>(k,r);
+    detail::cuda_kernel_launch_item<<<nblocks,nthreads>>>(k,r);
 }
 
 template <int dims, typename K>
@@ -2649,20 +2692,20 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
   detail::cuda_kernel_launch<dims,K><<<nblocks,nthreads>>>(k);
 }
 
-// Deprecated in SYCL 2020
+// This assumes an item index. Does parallel_for with offset, support using id?
 template <int dims, typename K>
+[[deprecated]]
 void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
 {
-  auto f = [=]() {
-    using item_t = item<dims,true>;
-    id stop{detail::make_stop(r[0],std::make_index_sequence<dims>{},o)};
-    detail::iterq begin{item_t{o,r,o}}, end{item_t{stop,r,o}};
-    std::for_each(detail::g_pol, begin, end, k);
-  };
-  q_.stdq_.push(f);
+  const dim3 nthreads{1024}; // cudaOccupancyMaxPotentialBlockSize?
+  const size_t sz = r.size();
+  const size_t rem = sz % nthreads.x;
+  const dim3 nblocks{sz / nthreads.x + (rem ? 1 : 0)};
+  if (rem)
+    detail::cuda_kernel_launch_item<<<nblocks,nthreads>>>(k, o, r, sz);
+  else
+    detail::cuda_kernel_launch_item<<<nblocks,nthreads>>>(k, o, r);
 }
-
-// Does parallel_for with offset support using id?
 
 // Section 4.7.2.2 Buffer properties
 namespace property {
@@ -3056,20 +3099,15 @@ public:
     requires(dims>0) : accessor{buf, ps} {}
 
   template <typename AllocT>
-  accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-           const property_list &ps = {})
-    requires(dims>0)
-    : range_{buf.range_}, offset_{}, detail::property_query<accessor>{ps}
+  void init(buffer<dataT, dims, AllocT> &buf, handler& cgh)
   {
     auto& allocs = cgh.context_.allocations_;
-//    if (allocs.find(buf.original_) == allocs.end())
     if (!allocs.contains(buf.original_))
     {
       std::cerr << "Allocating device memory.\n";
       cudaMalloc(&buf.d_data_, byte_size());
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), byte_size(),
                   cudaMemcpyHostToDevice);
-//      detail::device_allocation a{buf.d_data_};
       detail::device_allocation a{{buf.d_data_, [](auto* p){ cudaFree(p); }}};
       allocs[buf.original_] = std::move(a);
     }
@@ -3087,6 +3125,13 @@ public:
     buf.pq_ = &cgh.q_;
     d_data_ = buf.d_data_;
   }
+
+  template <typename AllocT>
+  accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
+           const property_list &ps = {})
+    requires(dims>0)
+    : range_{buf.range_}, offset_{}, detail::property_query<accessor>{ps}
+  { init(buf, cgh); }
 
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
@@ -3130,10 +3175,9 @@ public:
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, id<dims> accessOffset,
            const property_list &ps = {})
-    requires(dims>0)
-    : data_{buf.data_}, range_{accessRange}, offset_{accessOffset},
-      detail::property_query<accessor>{ps}
-  { assert(0); buf.pq_ = &cgh.q_; }
+    requires(dims>0) : range_{accessRange}, offset_{accessOffset},
+                       detail::property_query<accessor>{ps}
+  { init(buf, cgh); }
 
   template <typename AllocT, typename TagT>
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
@@ -3161,49 +3205,23 @@ public:
 
   operator reference() const requires(dims==0) { return (*this)[0]; }
 
-#if 0
-  // todo: review these operator[] signatures
-  template <int D>
-  reference operator[](id<D> i) const
-  { return data_[detail::linear_offset(i+offset_,range_)]; }
-
-  // These id types must have the same dims as the accessor
-  template <int D, bool O>
-  reference operator[](item<D, O> i) const { return (*this)[i.get_id()]; }
-
-  // Available only when: (AccessMode != access_mode::atomic && dimensions == 1)
-  reference operator[](size_t index) const { return data_[index]; }
-
-  // AccessMode == access_mode::read
-  /*const_reference operator[](id<dims> index) const
-  {
-  }*/
-#else
-  /* Available only when: (dims > 0) */
-  template <int D>
-  reference operator[](id<D> i) const
+  reference operator[](id<dims> i) const requires(dims>0)
   { return d_data_[detail::linear_offset(i+offset_,range_)]; }
 
-  template <int d = dims>
-  std::enable_if_t<(d==1), reference>
-  operator[](size_t i) const {
-    return d_data_[i+offset_[0]];
-  }
+  reference operator[](size_t i) const
+  requires(dims==1 && AccessMode != access_mode::atomic)
+  { return d_data_[i+offset_[0]]; }
 
-  /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
-  template <int d = dims>
-  std::enable_if_t<(d==2), const detail::indexer<dataT, dims-1, AccessMode>>
-  operator[](size_t index) const {
+  const detail::indexer<dataT, dims-1, AccessMode>
+  operator[](size_t index) const requires(dims==2) {
     return {d_data_ + range_[1] * index, {range_[1]}};
   }
 
-  template <int d = dims>
-  std::enable_if_t<(d==3), const detail::indexer<dataT, dims-1, AccessMode>>
-  operator[](size_t index) const {
+  const detail::indexer<dataT, dims-1, AccessMode>
+  operator[](size_t index) const requires(dims==3) {
     return {data_ + index * range_[1] * range_[2], {range_[1], range_[2]}};
   }
-#endif
 
   /* Deprecated: Available only when:
      (AccessMode == access_mode::atomic && dimensions == 0) */
