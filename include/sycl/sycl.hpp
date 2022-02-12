@@ -1290,6 +1290,16 @@ id(std::size_t) -> id<1>;
 id(std::size_t, std::size_t) -> id<2>;
 id(std::size_t, std::size_t, std::size_t) -> id<3>;
 
+namespace detail {
+
+  size_t linear_offset(const id<1>& o, const range<1>& r) { return o[0]; }
+  size_t linear_offset(const id<2>& o, const range<2>& r)
+  { return (o[0] * r[1]) + o[1]; }
+  size_t linear_offset(const id<3>& o, const range<3>& r)
+  { return (o[0] * r[1] * r[2]) + (o[1] * r[2]) + o[2]; }
+
+} // namespace detail
+
 // Section 4.9.1.4 item class
 template <int dims, bool WithOffset>
 class item
@@ -1333,10 +1343,7 @@ public:
 
   id<dims> get_id() const { return id_; }
   size_t get_id(int dim) const { return id_[dim]; }
-  size_t operator[](int dim) const requires(!WithOffset) { return id_[dim]; }
-  size_t operator[](int dim) const requires( WithOffset) {
-    return (id_ + offset_)[dim];
-  }
+  size_t operator[](int dim) const { return id_[dim]; }
   range<dims> get_range() const { return range_; }
   size_t get_range(int dim) const { return range_[dim]; }
 
@@ -1350,17 +1357,9 @@ public:
   operator size_t() const requires(dims==1 &&  WithOffset) {
     return id_[0] + offset_[0];
   }*/
-  operator size_t() const requires(dims==1) {
-    return WithOffset ? (id_[0] + offset_[0]) : id_[0];
-  }
+  operator size_t() const requires(dims==1) { return id_[0]; }
 
-  size_t get_linear_id() const
-  {
-    const auto& r = range_;
-         if constexpr (dims==1) return id_[0];
-    else if constexpr (dims==2) return id_[1] + id_[0]*r[1];
-    else if constexpr (dims==3) return id_[2] + id_[1]*r[2] + id_[0]*r[1]*r[2];
-  }
+  size_t get_linear_id() const { return detail::linear_offset(id_, range_); }
 
   // Common by-value semantics Section 4.5.3 Table 10
   friend bool operator==(const item& x, const item& y) {
@@ -3010,16 +3009,6 @@ template <class Container>
 buffer(Container &, const property_list & = {})
   -> buffer<typename Container::value_type, 1>;
 
-namespace detail {
-
-  size_t linear_offset(const id<1> &o, const range<1> &r) { return o[0]; }
-  size_t linear_offset(const id<2> &o, const range<2> &r)
-  { return (o[0] * r[1]) + o[1]; }
-  size_t linear_offset(const id<3> &o, const range<3> &r)
-  { return (o[0] * r[1] * r[2]) + (o[1] * r[2]) + o[2]; }
-
-} // namespace detail
-
 namespace detail
 {
 
@@ -3123,36 +3112,36 @@ public:
     }
 
     buf.pq_ = &cgh.q_;
-    d_data_ = buf.d_data_; // + offset
-    d_buffer_ = buf.d_data_;
+    d_data_ = buf.d_data_ + detail::linear_offset(offset_, buf_range_);
   }
 
   template <typename AllocT>
-  accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
-           const property_list &ps = {})
+  accessor(buffer<dataT, dims, AllocT>& buf, handler &cgh,
+           const property_list& ps = {})
     requires(dims>0)
-    : range_{buf.range_}, offset_{}, detail::property_query<accessor>{ps}
+    : range_{buf.range_}, buf_range_{buf.range_}, offset_{},
+      detail::property_query<accessor>{ps}
   { init(buf, cgh); }
 
   template <typename AllocT, typename TagT>
-  accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh, TagT tag,
-           const property_list &ps = {})
+  accessor(buffer<dataT, dims, AllocT>& buf, handler &cgh, TagT tag,
+           const property_list& ps = {})
     requires(dims>0) : accessor{buf, cgh, ps} {}
 
   template <typename AllocT>
-  accessor(buffer<dataT, dims, AllocT> &buf,
+  accessor(buffer<dataT, dims, AllocT>& buf,
            range<dims> accessRange, const property_list &ps = {})
     requires(dims>0)
   { assert(0); }
 
   template <typename AllocT, typename TagT>
-  accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange, TagT tag,
-           const property_list &ps = {})
+  accessor(buffer<dataT, dims, AllocT>& buf, range<dims> accessRange, TagT tag,
+           const property_list& ps = {})
     requires(dims>0) : accessor{buf, accessRange, ps} {}
 
   template <typename AllocT>
   accessor(buffer<dataT, dims, AllocT> &buf, range<dims> accessRange,
-           id<dims> accessOffset, const property_list &ps = {})
+           id<dims> accessOffset, const property_list& ps = {})
     requires(dims>0)
   { assert(0); }
 
@@ -3176,8 +3165,9 @@ public:
   accessor(buffer<dataT, dims, AllocT> &buf, handler &cgh,
            range<dims> accessRange, id<dims> accessOffset,
            const property_list &ps = {})
-    requires(dims>0) : range_{accessRange}, offset_{accessOffset},
-                       detail::property_query<accessor>{ps}
+    requires(dims>0)
+    : buf_range_{buf.range_}, range_{accessRange}, offset_{accessOffset},
+      detail::property_query<accessor>{ps}
   { init(buf, cgh); }
 
   template <typename AllocT, typename TagT>
@@ -3207,21 +3197,21 @@ public:
   operator reference() const requires(dims==0) { return (*this)[0]; }
 
   reference operator[](id<dims> i) const requires(dims>0)
-  { return d_data_[detail::linear_offset(i+offset_,range_)]; }
+  { return d_data_[detail::linear_offset(i, buf_range_)]; }
 
   reference operator[](size_t i) const
-  requires(dims==1 && AccessMode != access_mode::atomic)
-  { return d_data_[i+offset_[0]]; }
+  requires(dims==1 && AccessMode != access_mode::atomic) { return d_data_[i]; }
 
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const requires(dims==2) {
-    return {d_data_ + range_[1] * index, {range_[1]}};
+    return {d_data_ + buf_range_[1] * index, {buf_range_[1]}};
   }
 
   const detail::indexer<dataT, dims-1, AccessMode>
   operator[](size_t index) const requires(dims==3) {
-    return {data_ + index * range_[1] * range_[2], {range_[1], range_[2]}};
+    return {data_ + index * buf_range_[1] * buf_range_[2],
+           {buf_range_[1], buf_range_[2]}};
   }
 
   /* Deprecated: Available only when:
@@ -3233,8 +3223,9 @@ public:
   //cl::sycl::atomic<dataT, access::address_space::global_space> operator[](
   //  id<dimensions> index) const;
 
+  // "underlying buffer regardless of the accessor's offset"
   std::add_pointer_t<value_type> get_pointer() const noexcept {
-    return d_buffer_; // "underlying buffer regardless of the accessor's offset"
+    return d_data_ - detail::linear_offset(offset_, buf_range_);
   }
 
   //template <access::decorated IsDecorated>
@@ -3252,7 +3243,7 @@ public:
   */
 
   dataT* d_data_{}; // cannot be a reference as the buffer is stored on the host
-  dataT* d_buffer_{};
+  const range<dims> buf_range_;
   const range<dims> range_;
   const id<dims> offset_;
 };
