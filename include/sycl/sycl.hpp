@@ -3123,7 +3123,8 @@ public:
     }
 
     buf.pq_ = &cgh.q_;
-    d_data_ = buf.d_data_;
+    d_data_ = buf.d_data_; // + offset
+    d_buffer_ = buf.d_data_;
   }
 
   template <typename AllocT>
@@ -3233,7 +3234,7 @@ public:
   //  id<dimensions> index) const;
 
   std::add_pointer_t<value_type> get_pointer() const noexcept {
-    return d_data_;
+    return d_buffer_; // "underlying buffer regardless of the accessor's offset"
   }
 
   //template <access::decorated IsDecorated>
@@ -3251,6 +3252,7 @@ public:
   */
 
   dataT* d_data_{}; // cannot be a reference as the buffer is stored on the host
+  dataT* d_buffer_{};
   const range<dims> range_;
   const id<dims> offset_;
 };

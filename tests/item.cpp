@@ -155,6 +155,7 @@ bool item_test_accessor_offsets()
       cgh.parallel_for<Foo3>(sub_r, o2, [=](item<1> i) { // 3,4...
 #endif
         id<1> check{i};
+        printf("%d %p %p\n", i[0], &acc[0], &acc[i]);
         acc[i] = i[0];
       });
     });
