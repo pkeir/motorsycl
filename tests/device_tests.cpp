@@ -15,6 +15,7 @@ struct custom_device_selector
 {
   int operator()(const sycl::device& dev) const
   {
+#if !defined(__SYCL_COMPILER_VERSION)
     using device_type = sycl::info::device::device_type;
     if (dev.get_info<device_type>() == sycl::info::device_type::cpu) {
       return 50;
@@ -24,6 +25,15 @@ struct custom_device_selector
     }
 
     return -1; // Devices with a negative score will never be chosen.
+#else
+    if (dev.is_cpu())
+      return 50;
+
+    if (dev.is_gpu())
+      return 100;
+
+    return -1;
+#endif
   }
 };
 
