@@ -360,11 +360,6 @@ using std::dynamic_extent;
 using std::bit_cast;
 #endif
 
-namespace detail {
-  const auto g_pol = std::execution::par_unseq;
-  //const auto g_pol = std::execution::seq;
-}
-
 enum class backend : char { host, nvhpc };
 
 // Section 4.5.1.1. Type traits backend_traits
@@ -948,7 +943,9 @@ public:
     const std::vector<device>& ds = get_devices();
     auto comp = [&](const auto& x, const auto& y) { return sel(x) < sel(y); };
     const auto it = std::max_element(ds.begin(), ds.end(), comp);
-    if (it != ds.end()) { platform_ = it->get_platform(); }
+    if (sel(*it) < 0)
+      throw exception{errc::runtime, "the highest device score was negative."};
+    if (it != ds.end()) { *this = *it; }
   }
 
   /* -- common reference semantics -- */
@@ -982,20 +979,7 @@ public:
       return name_;
     }
     else if constexpr (std::is_same_v<param,sycl::info::device::device_type>) {
-      using P = decltype(detail::g_pol);
-      if        (std::is_same_v<const P,decltype(std::execution::seq)>) {
-        return info::device_type::cpu;
-      } else if (std::is_same_v<const P,decltype(std::execution::par)>) {
-        return info::device_type::cpu;
-      } else if (std::is_same_v<const P,decltype(std::execution::par_unseq)>) {
-        return info::device_type::cpu;
-      }
-    // The (C++17 only) nvc++ compiler has the C++20 unseq
-    #if defined(__NVCOMPILER) || __cplusplus > 201703L
-      else if (std::is_same_v<const P,decltype(std::execution::unseq)>) {
-        return info::device_type::gpu;
-      }
-    #endif
+      return info::device_type::gpu;
     }
   }
 
@@ -1032,10 +1016,7 @@ public:
   static std::vector<device>
   get_devices(info::device_type dt = info::device_type::all)
   {
-    device host, nvhpc;
-    host.name_ = "host";
-    nvhpc.name_ = "nvhpc";
-    std::vector<device> all_devices{host,nvhpc};
+    static std::vector<device> all_devices{device{}}; // only nvhpc
     return all_devices;
   }
 
@@ -2395,7 +2376,8 @@ public:
 
   template <typename DeviceSelector>
   explicit queue(const DeviceSelector &sel,
-                 const property_list &ps = {}) { assert(0); }
+                 const property_list &ps = {})
+    : dev_{sel}, detail::property_query<queue>{ps} { }
 
   template <typename DeviceSelector>
   explicit queue(const DeviceSelector &sel,
@@ -2561,7 +2543,8 @@ __global__ void cuda_kernel_launch(const K k)
 }
 
 template <int dims>
-inline id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
+requires(dims==1||dims==2||dims==3)
+constexpr id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
 {
   if      constexpr (dims==1)
     return {thread_num};

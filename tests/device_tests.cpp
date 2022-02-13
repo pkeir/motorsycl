@@ -7,7 +7,11 @@
 
 class Foo;
 
+#if defined(__SYCL_COMPILER_VERSION)
+struct custom_device_selector : sycl::device_selector
+#else
 struct custom_device_selector
+#endif
 {
   int operator()(const sycl::device& dev) const
   {
@@ -18,6 +22,7 @@ struct custom_device_selector
     if (dev.get_info<device_type>() == sycl::info::device_type::gpu) {
       return 100;
     }
+
     return -1; // Devices with a negative score will never be chosen.
   }
 };
@@ -28,10 +33,8 @@ bool selector_test()
   const unsigned h{4}, w{2}, sz{h*w};
   int *data = new int[sz]{}; // zero the data
 
-  property_list pl{property::buffer::use_host_ptr{}};
   custom_device_selector sel;
-  queue q{sel}; // No: sel implicitly creates a property_list;
-                // use C++20 concepts in the property_list constructors
+  queue q{sel};
 
   {
     buffer<int, 2> buf{ data, range<2>{h,w} };
