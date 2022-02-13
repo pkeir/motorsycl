@@ -2568,7 +2568,9 @@ inline id<dims> nonlinear_id(const range<dims>& r, const int thread_num)
   else if constexpr (dims==2)
     return {thread_num / r[1], thread_num % r[1]};
   else if constexpr (dims==3)
-    return {thread_num / (r[1] * r[2]), thread_num / r[1], thread_num % r[2]};
+    return { thread_num / (r[1] * r[2]),
+            (thread_num % (r[1] * r[2])) / r[2],
+             thread_num % r[2]};
 }
 
 // id<dims> index type:
