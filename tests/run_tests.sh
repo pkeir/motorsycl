@@ -1,8 +1,6 @@
 #!/bin/bash
 
 CXXFLAGS="-std=c++20"
-GXX=$MYGCC/bin/g++
-CLANG=$MYCLANG/bin/clang++
 INC="-I $MOTORSYCL_INCLUDE"
 COUNT=1
 
@@ -19,29 +17,11 @@ function doit()
   done
 }
 
-FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
-
-# Used by both GXX and CLANG below
-OLD_PATH=$LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$MYGCC/lib64:$LD_LIBRARY_PATH
-
-# Motörsycl using Clang (using recent GCC's libstdc++ for sycl::bit_cast)
-TOKENSTRING="${CLANG} -std=c++20 -Wno-deprecated-declarations -isystem $MYGCC/include/c++/* -isystem $MYGCC/include/c++/*/x86_64-pc-linux-gnu ${INC} %s -L$MYGCC/lib64 -L$MYGCC/lib/gcc/x86_64-pc-linux-gnu/* -ltbb"
-doit
-
-# Motörsycl using GCC (A recent GCC build - say 2021)
-# The -DTBB_SUPPRESS_DEPRECATED_MESSAGES tells the system TBB's _deprecated_header_message_guard.h not to define __TBB_show_deprecated_header_message and produce warning messages, over libstdc++'s inclusion of deprecated header tbb/task.h
-TOKENSTRING="${GXX} -std=c++20 -DTBB_SUPPRESS_DEPRECATED_MESSAGES -Wno-deprecated-declarations ${INC} %s -ltbb"
-doit
-
-# Restore; just in case
-export LD_LIBRARY_PATH=$OLD_PATH
-
 FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
 
-# MotörSYCL (MotorSYCL) using NVIDIA nvc++
+# MotörSYCL (MotorSYCL) using NVIDIA nvc++ (-w turns off warnings)
 if [[ -v MYNVCPP ]]; then
-  TOKENSTRING="$MYNVCPP/bin/nvc++ -stdpar -std=c++20 ${INC} %s"
+  TOKENSTRING="$MYNVCPP/bin/nvc++ -stdpar -acc -std=c++20 -w ${INC} %s"
   doit
 fi
 FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"

@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
   range<1> r{sz};
 
   std::iota(arr_in.begin(), arr_in.end(), 0);
-  const std::array<int, sz>& arr_in_ref = arr_in;
+  /*const*/ std::array<int, sz>& arr_in_ref = arr_in; // const ... buffer ctor.
 
   default_selector sel;
   queue q{sel};
