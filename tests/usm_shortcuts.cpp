@@ -9,7 +9,7 @@
 
 class Foo;
 
-// $MYCUDA/bin/nvc++ -stdpar -std=c++2a -I ../include usm_shortcuts.cpp
+// $MYCUDA/bin/nvc++ -stdpar -acc -std=c++20 -I ../include usm_shortcuts.cpp
 // 4.8. Unified shared memory (USM)
 
 bool test_usm_device()
@@ -67,11 +67,7 @@ bool test_usm_system()
   range<1> r{sz};
   queue q;
 
-#ifdef __SYCL_COMPILER_VERSION
-  bool b = q.get_device().has(aspect::usm_system_allocator);
-#else
   bool b = q.get_device().has(aspect::usm_system_allocations);
-#endif
   if (!b)
     return true;
   unsigned *p = new unsigned[sz];

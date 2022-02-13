@@ -2435,7 +2435,11 @@ public:
   // Reductions&&... reductions, const KernelType &kernelFunc
   template </* typename KernelName, */ int dims, typename... Rest>
   event parallel_for(range<dims> r, Rest&&... rest)
-  { h_.parallel_for(r, std::forward<Rest>(rest)...); return {}; }
+  {
+    handler h{*this, context_};
+    h.parallel_for(r, std::forward<Rest>(rest)...);
+    return {};
+  }
 
   // Parameter pack acts as-if:
   // Reductions&&... reductions, const KernelType &kernelFunc
@@ -2511,7 +2515,7 @@ public:
   {
     handler h{*this, context_};
     cgf(h);
-    std::cout << h.buffer_events_.size() << " accessors considered!\n";
+    // std::cout << h.buffer_events_.size() << " accessors considered!\n";
     for (event* p: h.buffer_events_)
       *p = h.kernel_event_;
     return h.kernel_event_;
@@ -2759,7 +2763,7 @@ public:
     : range_{r},
       h_data_{alloc_.allocate(r.size()),
               [this](auto* p){ alloc_.deallocate(p, range_.size()); }},
-      detail::property_list<buffer>{ps} {}
+      detail::property_query<buffer>{ps} {}
 
   buffer(const range<dims> &r, AllocT alloc, const property_list &ps = {})
   { assert(0); }
@@ -3078,7 +3082,7 @@ public:
     auto& allocs = cgh.context_.allocations_;
     if (!allocs.contains(buf.original_))
     {
-      std::cerr << "Allocating device memory.\n";
+      // std::cerr << "Allocating device memory.\n";
       const size_type buf_bytes = buf_range_.size() * sizeof(dataT);
       cudaMalloc(&buf.d_data_, buf_bytes);
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), buf_bytes,
