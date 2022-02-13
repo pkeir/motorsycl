@@ -1333,7 +1333,7 @@ class item
   item(const id<dims>& i, const range<dims>& r)
     requires(!WithOffset) : id_{i}, range_{r} {}
   item(const id<dims>& i, const range<dims>& r, const id<dims>& o)
-    requires( WithOffset) : id_{i}, range_{r}, offset_{o} {}
+    requires( WithOffset) : id_{i+o}, range_{r}, offset_{o} {}
 
   item() = default;
 
@@ -3088,14 +3088,15 @@ public:
     requires(dims>0) : accessor{buf, ps} {}
 
   template <typename AllocT>
-  void init(buffer<dataT, dims, AllocT> &buf, handler& cgh)
+  void init(buffer<dataT, dims, AllocT>& buf, handler& cgh)
   {
     auto& allocs = cgh.context_.allocations_;
     if (!allocs.contains(buf.original_))
     {
       std::cerr << "Allocating device memory.\n";
-      cudaMalloc(&buf.d_data_, byte_size());
-      cudaMemcpy( buf.d_data_, buf.h_data_.get(), byte_size(),
+      const size_type buf_bytes = buf_range_.size() * sizeof(dataT);
+      cudaMalloc(&buf.d_data_, buf_bytes);
+      cudaMemcpy( buf.d_data_, buf.h_data_.get(), buf_bytes,
                   cudaMemcpyHostToDevice);
       detail::device_allocation a{{buf.d_data_, [](auto* p){ cudaFree(p); }}};
       allocs[buf.original_] = std::move(a);
@@ -3116,7 +3117,7 @@ public:
   }
 
   template <typename AllocT>
-  accessor(buffer<dataT, dims, AllocT>& buf, handler &cgh,
+  accessor(buffer<dataT, dims, AllocT>& buf, handler& cgh,
            const property_list& ps = {})
     requires(dims>0)
     : range_{buf.range_}, buf_range_{buf.range_}, offset_{},
@@ -3124,7 +3125,7 @@ public:
   { init(buf, cgh); }
 
   template <typename AllocT, typename TagT>
-  accessor(buffer<dataT, dims, AllocT>& buf, handler &cgh, TagT tag,
+  accessor(buffer<dataT, dims, AllocT>& buf, handler& cgh, TagT tag,
            const property_list& ps = {})
     requires(dims>0) : accessor{buf, cgh, ps} {}
 
