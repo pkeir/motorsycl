@@ -27,11 +27,16 @@ bool multi_ptr_test()
       auto acc = buf.get_access<access::mode::write>(cgh);
       cgh.parallel_for<Foo>(range<1>{sz}, [=](id<1> i) {
 #endif
-#if defined(__MOTORSYCL__)
+/*
+  // Somehow this seems to need an absent "reference" member from class
+  // sycl::multi_ptr<int, sycl::access::address_space::global_space,
+  //                 sycl::access::decorated::yes>
+
         auto ptr = sycl::make_ptr<T,access::address_space::global_space,
                                       access::decorated::legacy>(
                                         acc.get_pointer());
-#endif
+
+*/
         using gptr_t = sycl::global_ptr<T>;
         gptr_t gptr(acc.get_pointer());
 #ifndef TRISYCL_CL_LANGUAGE_VERSION

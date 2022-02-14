@@ -13,12 +13,9 @@
 #include <queue>         // std::queue
 #include <functional>    // std::function, std::plus
 #include <cassert>       // assert
-#include <algorithm>     // std::for_each
-#include <numeric>       // std::iota (temporarily)
+#include <algorithm>     // std::max_element
 #include <optional>      // std::optional
-#include <tuple>         // std::tuple_size, std::tuple_element
 #include <array>         // std::array
-#include <execution>     // std::execution Requires -ltbb
 #include <cmath>         // std::sin, std::cos, std::sqrt
 #include <mutex>         // std::mutex
 #include <span>          // std::span, std::dynamic_extent
@@ -27,7 +24,7 @@
 #include <system_error>  // std::is_error_code_enum
 #include <unordered_map> // std::unordered_map
 #include <variant>       // std::variant
-#include <cxxabi.h>
+#include <iostream>      // std::cerr
 
 namespace sycl
 {
@@ -56,13 +53,21 @@ enum class aspect;
 enum class target {
   device,
   host_task,
-  global_buffer = device, // Deprecated
-  constant_buffer,        // Deprecated
-  local,                  // Deprecated
-  host_buffer             // Deprecated
+  global_buffer [[deprecated]] = device,
+  constant_buffer [[deprecated]],
+  local [[deprecated]],
+  host_buffer [[deprecated]]
 };
+
 namespace access {
-  using sycl::target;
+
+using sycl::target; // The legacy type "access::target" is deprecated.
+
+enum class [[deprecated]] placeholder {
+  false_t,
+  true_t,
+};
+
 } // namespace access
 
 // Section 4.7.6.2
@@ -70,22 +75,14 @@ enum class access_mode {
   read,
   write,
   read_write,
-  discard_write,      // Deprecated in SYCL 2020
-  discard_read_write, // Deprecated in SYCL 2020
-  atomic              // Deprecated in SYCL 2020
+  discard_write [[deprecated]],
+  discard_read_write [[deprecated]],
+  atomic [[deprecated]]
 };
-namespace access {
-  using sycl::access_mode;
-}
 
-// Section 4.7.6.5 Placeholder accessor
-enum class placeholder { // Deprecated in SYCL 2020
-  false_t,
-  true_t,
-};
 namespace access {
-  using sycl::placeholder;
-}
+  using sycl::access_mode; // The legacy type "access::mode" is deprecated.
+} // namespace access
 
 // Section 4.7.6.9.1 Interface for buffer command accessors
 template <
@@ -94,8 +91,7 @@ template <
   access_mode AccessMode = (std::is_const_v<dataT> ? access_mode::read
                                                    : access_mode::read_write),
   target AccessTarget = target::device,
-  access::placeholder isPlaceholder = access::placeholder::false_t // *
-  // * Deprecated in SYCL 2020:
+  access::placeholder isPlaceholder = access::placeholder::false_t
 >
 class accessor;
 
@@ -356,7 +352,7 @@ namespace sycl {
 // Section 3.9.2 Alignment with future versions of C++
 using std::span;
 using std::dynamic_extent;
-#ifndef __NVCOMPILER
+#if 0
 using std::bit_cast;
 #endif
 
@@ -416,7 +412,7 @@ struct profile;
 struct version;
 struct name;
 struct vendor;
-struct extensions; // Deprecated
+struct [[deprecated]] extensions;
 
 } // namespace platform
 
@@ -473,7 +469,7 @@ struct native_vector_width_half;
 struct max_clock_frequency;
 struct address_bits;
 struct max_mem_alloc_size;
-struct image_support; // Deprecated
+struct [[deprecated]] image_support;
 struct max_read_image_args;
 struct max_write_image_args;
 struct image2d_max_height;
@@ -492,8 +488,8 @@ struct global_mem_cache_type;
 struct global_mem_cache_line_size;
 struct global_mem_cache_size;
 struct global_mem_size;
-struct max_constant_buffer_size; // Deprecated
-struct max_constant_args; // Deprecated
+struct [[deprecated]] max_constant_buffer_size;
+struct [[deprecated]] max_constant_args;
 struct local_mem_type;
 struct local_mem_size;
 struct error_correction_support;
@@ -505,11 +501,11 @@ struct atomic_fence_scope_capabilities;
 struct profiling_timer_resolution;
 struct is_endian_little;
 struct is_available;
-struct is_compiler_available; // Deprecated
-struct is_linker_available; // Deprecated
+struct [[deprecated]] is_compiler_available;
+struct [[deprecated]] is_linker_available;
 struct execution_capabilities;
-struct queue_profiling; // Deprecated
-struct built_in_kernels; // Deprecated
+struct [[deprecated]] queue_profiling;
+struct [[deprecated]] built_in_kernels;
 struct built_in_kernel_ids;
 struct platform { using return_type = platform; };
 struct name { using return_type = std::string; };
@@ -519,7 +515,7 @@ struct profile { using return_type = platform; };
 struct version { using return_type = platform; };
 struct backend_version { using return_type = platform; };
 struct aspects;
-struct extensions; // Deprecated
+struct [[deprecated]] extensions;
 struct printf_buffer_size;
 struct preferred_interop_user_sync;
 struct parent_device;
@@ -703,7 +699,7 @@ public:
   bool has(aspect asp) const
   { assert(0); return {}; }
 
-  bool has_extension(const std::string &extension) const // Deprecated
+  [[deprecated]] bool has_extension(const std::string &extension) const
   { assert(0); return {}; }
 
   static std::vector<platform> get_platforms()
@@ -1378,7 +1374,7 @@ public:
     return
     detail::zip_with<range<dims>>(std::divides{}, global_range_, local_range_);
   }
-  id<dims> get_offset() const { return offset_; } // Deprecated SYCL 2020
+  [[deprecated]] id<dims> get_offset() const { return offset_; }
 };
 
 } // namespace sycl
@@ -1574,8 +1570,7 @@ public:
   size_t                  get_local_range(int i) const requires (dims==3)
   { return i ? (i==2 ? _BLOCKDIM_Z : _BLOCKDIM_Y) : _BLOCKDIM_X; }
 
-  [[deprecated]] id<dims> get_offset() const
-  { return offset_; }
+  [[deprecated]] id<dims> get_offset() const { return offset_; }
 
   nd_range<dims>          get_nd_range() const
   { return {get_global_range(), get_local_range()}; }
@@ -1628,7 +1623,7 @@ namespace access {
 enum class address_space : int {
   global_space,
   local_space,
-  constant_space, // Deprecated in SYCL 2020
+  constant_space [[deprecated]],
   private_space,
   generic_space,
 };
@@ -1697,9 +1692,9 @@ public:
   //template <int dims>
   //multi_ptr(local_accessor<ElementType, dims>);
 
-  // Deprecated
   // Only if Space == local_space or generic_space
   template <int dims, access_mode Mode, access::placeholder isPlaceholder>
+  [[deprecated]]
   multi_ptr(accessor<value_type, dims, Mode, target::local, isPlaceholder>);
 
   // Assignment and access operators
@@ -1720,13 +1715,13 @@ public:
   reference operator*() const;
   pointer operator->() const;
 
-  pointer get() const;
+  pointer get() const { return p_; }
   std::add_pointer_t<value_type> get_raw() const;
   __unspecified__ * get_decorated() const;
 
   // Conversion to the underlying pointer type
   // Deprecated, get() should be used instead.
-  operator pointer() const;
+  [[deprecated]] operator pointer() const { return get(); }
 
   // Only if Space == address_space::generic_space
   // Cast to private_ptr
@@ -1849,18 +1844,19 @@ public:
   { assert(0); return {}; }
 
 private:
-  pointer m_p;
+  pointer p_;
 };
 
 // Specialization of multi_ptr for void and const void
 // VoidType can be either void or const void
-template <access::address_space Space, access::decorated DecorateAddress>
-class multi_ptr<const void, Space, DecorateAddress> { /* todo */ };
-
-template <access::address_space Space, access::decorated DecorateAddress>
-class multi_ptr<void, Space, DecorateAddress>
+template <
+  typename VoidType,
+  access::address_space Space,
+  access::decorated DecorateAddress
+>
+requires(std::is_same_v<void,std::remove_const_t<VoidType>>)
+class multi_ptr<VoidType, Space, DecorateAddress>
 {
-  using VoidType = void;
 public:
 
   static constexpr bool is_decorated = DecorateAddress==access::decorated::yes;
@@ -1892,10 +1888,11 @@ public:
   // Only if Space == local_space
   //template <typename ElementType, int dims>
   //multi_ptr(local_accessor<ElementType, dims>);
-  // Deprecated
+
   // Only if Space == local_space
   template <typename ElementType, int dims, access_mode Mode,
             access::placeholder isPlaceholder>
+  [[deprecated]]
   multi_ptr(accessor<ElementType,dims,Mode,target::local,isPlaceholder>);
 
   // Assignment operators
@@ -1903,10 +1900,10 @@ public:
   multi_ptr &operator=(multi_ptr&&);
   multi_ptr &operator=(std::nullptr_t);
 
-  pointer get() const;
+  pointer get() const { return p_; }
 
   // Conversion to the underlying pointer type
-  explicit operator pointer() const;
+  explicit operator pointer() const { return get(); } // also deprecated?
 
   // Explicit conversion to a multi_ptr<ElementType>
   // If VoidType is const, ElementType must be as well
@@ -1967,7 +1964,7 @@ public:
   { assert(0); return {}; }
 
 private:
-  pointer m_p;
+  pointer p_;
 };
 
 // Deprecated, address_space_cast should be used instead.
@@ -1976,7 +1973,7 @@ template <
   access::address_space Space,
   access::decorated DecorateAddress
 >
-multi_ptr<ElementType, Space, DecorateAddress>
+[[deprecated]] multi_ptr<ElementType, Space, DecorateAddress>
 make_ptr(ElementType *p) { return {p}; }
 
 template <
@@ -2146,14 +2143,10 @@ private:
 // Deprecated.
 // Specialization of multi_ptr for void and const void
 // VoidType can be either void or const void
-template <access::address_space Space>
-class [[deprecated]] multi_ptr<const void, Space, access::decorated::legacy> {};
-
-template <access::address_space Space>
-class [[deprecated]] multi_ptr<void, Space, access::decorated::legacy>
+template <typename VoidType, access::address_space Space>
+requires(std::is_same_v<void,std::remove_const_t<VoidType>>)
+class [[deprecated]] multi_ptr<VoidType, Space, access::decorated::legacy>
 {
-  using VoidType = void;
-
 public:
   using element_type = VoidType;
   using difference_type = std::ptrdiff_t;
@@ -2266,9 +2259,8 @@ template <
 using local_ptr =
   multi_ptr<ElementType, access::address_space::local_space, IsDecorated>;
 
-// Deprecated in SYCL 2020
 template <typename ElementType>
-using constant_ptr =
+using constant_ptr [[deprecated]] =
   multi_ptr<ElementType, access::address_space::constant_space,
             access::decorated::legacy>;
 
@@ -2351,9 +2343,8 @@ public:
   template <int dims, typename K>
   void parallel_for(nd_range<dims>, const K&);
 
-  // Deprecated in SYCL 2020
   template <int dims, typename K>
-  void parallel_for(range<dims>, id<dims>, const K&);
+  [[deprecated]] void parallel_for(range<dims>, id<dims>, const K&);
 };
 
 // Section 4.6.5 Queue interface
@@ -2476,11 +2467,7 @@ public:
   /* -- USM functions -- */
 
   event memcpy(void* dest, const void* src, size_t numBytes) {
-#ifdef __NVCOMPILER
     cudaMemcpy(dest, src, numBytes, cudaMemcpyDefault);
-#else
-    std::memcpy(dest, src, numBytes);
-#endif
     return {};
   }
 
@@ -2682,7 +2669,6 @@ void handler::parallel_for(nd_range<dims> r, const K& k)
 
 // This assumes an item index. Does parallel_for with offset, support using id?
 template <int dims, typename K>
-[[deprecated]]
 void handler::parallel_for(range<dims> r, id<dims> o, const K &k)
 {
   const dim3 nthreads{1024}; // cudaOccupancyMaxPotentialBlockSize?
@@ -3082,7 +3068,7 @@ public:
     auto& allocs = cgh.context_.allocations_;
     if (!allocs.contains(buf.original_))
     {
-      // std::cerr << "Allocating device memory.\n";
+      //std::cerr << "Allocating " << buf_bytes << " bytes of device memory.\n";
       const size_type buf_bytes = buf_range_.size() * sizeof(dataT);
       cudaMalloc(&buf.d_data_, buf_bytes);
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), buf_bytes,
@@ -3329,6 +3315,7 @@ public:
 
   reference operator[](id<1> index) const
     requires(dims > 0) { return data_[index[0]]; }
+
   reference operator[](id<2> index) const
   {
     return h_data_[index[0] * range_[1] + index[1]];
@@ -3339,7 +3326,6 @@ public:
   reference
   operator[](size_t index) const { return h_data_[index]; }
 
-  /* Available only when: dims > 1 */
   // Off-piste: returning an __unspecified__ ... not an __unspecified__&
   template <int d = dims>
   requires(d==2)
@@ -3377,14 +3363,9 @@ public:
 // Section 4.8.3.2. Device allocation functions
 template <typename T>
 T* malloc_device(size_t count, const queue& q, const property_list &ps = {}) {
-#ifdef __NVCOMPILER
   T *p;
   cudaMalloc(&p, count * sizeof(T));
   return p;
-#else
-  // Not C++ new, as sycl::free is untyped
-  return static_cast<T*>(std::malloc(count * sizeof(T)));
-#endif
 }
 
 // Section 4.8.3.3. Host allocation functions
@@ -3402,13 +3383,7 @@ T* malloc_shared(size_t count, const queue& q, const property_list& ps = {}) {
 // Section 4.8.3.6. Memory deallocation functions
 void free(void* ptr, sycl::context& syclContext) { assert(0); }
 
-void free(void* ptr, sycl::queue& q) {
-#ifdef __NVCOMPILER
-  cudaFree(ptr);
-#else
-  std::free(ptr);
-#endif
-}
+void free(void* ptr, sycl::queue& q) { cudaFree(ptr); }
 
 // Section 4.14.2.1 Vec interface
 
@@ -4060,7 +4035,6 @@ public:
 
   size_t size() const noexcept { return tbs_; }
 
-  // Deprecated
   [[deprecated]] size_t get_size() const { return size(); }
 
   size_t get_work_item_buffer_size() const { return wibs_; }

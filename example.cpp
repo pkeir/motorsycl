@@ -30,7 +30,8 @@ int main(int argc, char *argv[])
 
   assert(b);
 
-  free(d_p,q); // sycl::free
+  free(d_p, q); // sycl::free
+
   return 0;
 }
 
