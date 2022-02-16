@@ -44,8 +44,8 @@ template <int dims = 1> requires(dims==1||dims==2||dims==3) class range;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_range;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class id;
 template <int dims = 1> requires(dims==1||dims==2||dims==3) class group;
+template <int dims = 1> requires(dims==1||dims==2||dims==3) class nd_item;
 template <int = 1, bool = true> class item;
-template <int = 1> class nd_item;
 template <typename, int> class vec;
 enum class aspect;
 
@@ -356,27 +356,11 @@ using std::dynamic_extent;
 using std::bit_cast;
 #endif
 
-enum class backend : char { host, nvhpc };
+enum class backend : char { nvhpc };
 
 // Section 4.5.1.1. Type traits backend_traits
 template <backend>
   class backend_traits;
-
-template <>
-class backend_traits<backend::host>
-{
-  struct todo_backend_host {};
-
-public:
-
-  template <class T>
-  using input_type = todo_backend_host;
-
-  template <class T>
-  using return_type = todo_backend_host;
-
-  using errc = todo_backend_host;
-};
 
 template <>
 class backend_traits<backend::nvhpc>
@@ -629,10 +613,6 @@ template <>
 struct is_error_code_enum<sycl::errc> : std::true_type {};
 
 template <>
-struct is_error_code_enum<sycl::backend_traits<sycl::backend::host>::errc>
-  : std::true_type {};
-
-template <>
 struct is_error_code_enum<sycl::backend_traits<sycl::backend::nvhpc>::errc>
   : std::true_type {};
 
@@ -774,8 +754,6 @@ public:
 };
 
 namespace detail {
-
-context g_context{}; // default context
 
 class sycl_error_category : public std::error_category
 {
@@ -1383,6 +1361,7 @@ namespace sycl {
 
 // Section 4.9.1.5 nd_item class
 template <int dims>
+requires(dims==1||dims==2||dims==3)
 class nd_item
 {
   id<dims> offset_;
@@ -2347,12 +2326,19 @@ public:
   [[deprecated]] void parallel_for(range<dims>, id<dims>, const K&);
 };
 
+namespace detail {
+
+context g_context{}; // default context
+device g_device{};   // default device
+
+}
+
 // Section 4.6.5 Queue interface
 // All constructors will implicitly construct a SYCL platform, device
 // and context in order to facilitate the construction of the queue.
 class queue : public detail::property_query<queue>
 {
-  device dev_;
+  device dev_{detail::g_device};
   context context_{detail::g_context};
   queue* original_{this}; // So: this class is a copy if original_ != this
 
@@ -3068,13 +3054,13 @@ public:
     auto& allocs = cgh.context_.allocations_;
     if (!allocs.contains(buf.original_))
     {
-      //std::cerr << "Allocating " << buf_bytes << " bytes of device memory.\n";
       const size_type buf_bytes = buf_range_.size() * sizeof(dataT);
       cudaMalloc(&buf.d_data_, buf_bytes);
       cudaMemcpy( buf.d_data_, buf.h_data_.get(), buf_bytes,
                   cudaMemcpyHostToDevice);
       detail::device_allocation a{{buf.d_data_, [](auto* p){ cudaFree(p); }}};
       allocs[buf.original_] = std::move(a);
+      //std::cerr << "Allocating " << buf_bytes << " bytes of device memory.\n";
     }
 
     // See Table 57
