@@ -2744,7 +2744,9 @@ public:
     : range_{r}, h_data_{hostData,[](auto){}}, detail::property_query<buffer>{ps}
   {
     const bool well_aligned = detail::is_aligned(hostData, alignof(value_type));
-    const bool use_host_ptr = false;
+    const bool use_host_ptr =
+      this->template has_property<property::buffer::use_host_ptr>();
+
     if (!well_aligned && !use_host_ptr) {
       std::cerr << "Warning: misaligned host data passed to buffer.\n";
       h_data_.reset(alloc_.allocate(size()),
@@ -3348,14 +3350,14 @@ public:
 
 // Section 4.8.3.2. Device allocation functions
 template <typename T>
-T* malloc_device(size_t count, const queue& q, const property_list &ps = {}) {
+T* malloc_device(size_t count, const queue& q, const property_list& ps = {}) {
   T *p;
   cudaMalloc(&p, count * sizeof(T));
   return p;
 }
 
 // Section 4.8.3.3. Host allocation functions
-void* malloc_host(size_t nbytes, const queue& q, const property_list &ps = {}) {
+void* malloc_host(size_t nbytes, const queue& q, const property_list& ps = {}) {
   assert(0);
   return {};
 }
@@ -4000,7 +4002,7 @@ class stream : public detail::property_query<stream>
 public:
 
   stream(size_t totalBufferSize, size_t workItemBufferSize, handler& cgh,
-         const property_list &ps = {})
+         const property_list& ps = {})
     : detail::property_query<stream>{ps}, tbs_{totalBufferSize},
       wibs_{workItemBufferSize} {}
 

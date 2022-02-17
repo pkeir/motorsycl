@@ -17,7 +17,7 @@ function doit()
   done
 }
 
-FILES="three-simple-queues.cpp usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
+FILES="use_host_ptr.cpp three-simple-queues.cpp usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
 
 # MotörSYCL (MotorSYCL) using NVIDIA nvc++ (-w turns off warnings)
 if [[ -v MYNVCPP ]]; then
@@ -25,7 +25,7 @@ if [[ -v MYNVCPP ]]; then
   doit
 fi
 
-FILES="usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
+FILES="use_host_ptr.cpp usm_shortcuts.cpp containers.cpp maths.cpp host_accessor.cpp auto_lambda.cpp item.cpp simple_2d_test.cpp three_kernels.cpp unused_buffer.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp multi_ptr.cpp single_task.cpp"
 
 # Intel's SYCL (DPCPP) -fsycl-unnamed-lambda is also useful (pre-2020-default)
 if [[ -v MYDPCPP ]]; then
@@ -37,7 +37,7 @@ fi # CUDA_10_2
 doit
 fi # MYDPCPP
 
-FILES="maths.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp single_task.cpp"
+FILES="use_host_ptr.cpp maths.cpp auto_lambda.cpp simple_2d_test.cpp three_kernels.cpp qw.cpp simple_2d_nd_range.cpp vectors.cpp single_task.cpp"
 
 # Codeplay's ComputeCpp
 if [[ -v COMPUTECPP_DIR ]]; then
