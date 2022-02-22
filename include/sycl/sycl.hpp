@@ -1103,13 +1103,13 @@ requires(dims==1||dims==2||dims==3)
 class range : public std::array<std::size_t, dims>
 {
 public:
-  range() = default;
+  range() = default; // remove
 /*  range(std::size_t d, std::convertible_to<std::size_t> auto... ds)
     requires((sizeof...(ds))+1==dims)
     : std::array<std::size_t,dims>{d,static_cast<std::size_t>(ds)...} {}
 // GCC bug 100138. Workaround below:
 */
-  template <typename ...Ts>
+  template <typename... Ts>
   range(std::size_t d, Ts... ds)
     requires((sizeof...(Ts))+1==dims &&
               (std::convertible_to<Ts,std::size_t> && ...))
@@ -1285,10 +1285,11 @@ class item
   void detail::cuda_kernel_launch_item(const K, const id<dims_>,
                                        const range<dims_>, const size_t);
 
-  item(const id<dims>& i, const range<dims>& r)
-    requires(!WithOffset) : id_{i}, range_{r} {}
-  item(const id<dims>& i, const range<dims>& r, const id<dims>& o)
-    requires( WithOffset) : id_{i+o}, range_{r}, offset_{o} {}
+  // nvc++ C++20 bug
+//  item(const id<dims>& i, const range<dims>& r)
+//    requires(!WithOffset) : id_{i}, range_{r} {}
+  item(const id<dims>& i, const range<dims>& r, const id<dims>& o = {})
+    /*requires( WithOffset)*/ : id_{i}, range_{r}, offset_{o} {}
 
   item() = default;
 
@@ -1307,7 +1308,7 @@ public:
     return {id_,range_,{}};
   }
 
-  /* nvc++ bug
+  /* nvc++ C++20 bug
   operator size_t() const requires(dims==1 && !WithOffset) { return id_[0]; }
   operator size_t() const requires(dims==1 &&  WithOffset) {
     return id_[0] + offset_[0];
