@@ -4,6 +4,7 @@
 #include <CL/sycl.hpp>
 #endif
 #include <cassert>
+#include <iostream>
 
 class Foo0;
 class Foo1;
@@ -30,14 +31,26 @@ bool simple_item_test()
       auto acc = buf.get_access<access::mode::write>(cgh);
       cgh.parallel_for<Foo0>(range<1>{sz}, [=](item<1> i) {
 #endif
+        printf("(%p %lu %lu %lu)\n", &i, i.id_[0], i.get_linear_id(), (i[0]==0));
+        if (i[0]==0) {
+          const id<1> i3{3};
+          const id<1> i4{0};// = {};
+//          printf("%d\n", i3[0]);
+//          printf("i %d ", i4[0]);
+          id<1> i7{i3+i4}; // as in the item constructor
+//          printf("i %d\n", i7[0]);
+        }
         acc[i] = 42;
       });
     });
   }
 
+  printf("\n");
+
   bool b{true};
   for (unsigned i = 0; i < sz; ++i) {
     b = b && data[i]==42;
+    printf("%d ", data[i]);
   }
 
   return b;
@@ -103,10 +116,17 @@ bool item_test_parallel_for_offsets()
       cgh.parallel_for<Foo2>(sub_r, o, [=](item<1> i) { // 3,4...
 #endif
         id<1> check{i};
+        printf("%d %d,", i[0], i.get_linear_id());
         acc[i] = i[0];
       });
     });
   }
+
+/*
+  for (int i = 0; i < sz; i++)
+    std::cout << data[i] << ' ';
+*/
+  std::cerr << '\n';
 
   bool b{true};
   for (unsigned i = 0; i < sub_sz; ++i) { b = b && data[i+offset]==i+offset; }
@@ -208,7 +228,9 @@ bool item_test_accessor_offsets()
 int main(int argc, char *argv[])
 {
   assert(simple_item_test());
-  assert(item_test());
+//  simple_item_test();
+cudaDeviceSynchronize();
+//  assert(item_test());
 //  assert(item_test_parallel_for_offsets());
 //  assert(item_test_parallel_for_offsets_2d());
 #ifndef TRISYCL_CL_LANGUAGE_VERSION

@@ -1253,12 +1253,18 @@ namespace detail {
   size_t linear_offset(const id<3>& o, const range<3>& r)
   { return (o[0] * r[1] * r[2]) + (o[1] * r[2]) + o[2]; }
 
+  template <typename U, typename A, typename T, T... Is>
+  constexpr U repack(const A& x, std::integer_sequence<T,Is...>) {
+    return U{x[Is]...};
+  }
+
 } // namespace detail
 
 // Section 4.9.1.4 item class
 template <int dims, bool WithOffset>
 class item
 {
+public: // debug
   id<dims> id_;
   range<dims> range_;
   id<dims> offset_;
@@ -1285,11 +1291,32 @@ class item
   void detail::cuda_kernel_launch_item(const K, const id<dims_>,
                                        const range<dims_>, const size_t);
 
-  // nvc++ C++20 bug
+  // nvc++ C++20 requires bug
 //  item(const id<dims>& i, const range<dims>& r)
 //    requires(!WithOffset) : id_{i}, range_{r} {}
-  item(const id<dims>& i, const range<dims>& r, const id<dims>& o = {})
-    /*requires( WithOffset)*/ : id_{i}, range_{r}, offset_{o} {}
+
+  // nvc++ bug TPR 31413
+  // item(const id<dims>& i, const range<dims>& r, const id<dims>& o = {})
+  //  /*requires( WithOffset)*/ : id_{i}, range_{r}, offset_{o} {}
+//  item(const id<dims>& i, const range<dims>& r, const id<dims>& o = {})
+//   : id_{i+o}, range_{r}, offset_{o} {}
+
+  item(const id<dims>& i, const range<dims>& r,
+       const id<dims>& o =
+         detail::repack<id<dims>>(std::array{0,0,0},
+                                  std::make_index_sequence<dims>{}))
+   : id_{i+o}, range_{r}, offset_{o} {}
+#if 0
+  {
+     id_[0] = i[0] + o[0];
+     range_[0] = r[0];
+     offset_[0] = o[0];
+     bool b = i[0]==0;
+     printf("(T) %lu %lu %p\n", _THREADIDX_X, id_[0], this);
+//     printf("%zu %d - ", i[0], i[0]==0); // !!!?
+//     printf("%zu %d - ", i[0], b); // !!!?
+  }
+#endif
 
   item() = default;
 
@@ -1305,7 +1332,9 @@ public:
 
   id<dims> get_offset() const requires(WithOffset) { return offset_; }
   operator item<dims,true>() const requires(!WithOffset) {
-    return {id_,range_,{}};
+    printf("Hi! %p %lu\n", this, id_[0]);
+    return {id_, range_, detail::repack<id<dims>>(std::array{0,0,0},
+                                  std::make_index_sequence<dims>{})};
   }
 
   /* nvc++ C++20 bug
@@ -2511,9 +2540,6 @@ auto make_stop(const size_t r0, is<T,x,xs...>, const id<1+sizeof...(xs)> &o) {
   return id<1+sizeof...(xs)>{r0+o[0],o[xs]...};
 }
 
-template <typename U, typename A, typename T, T... Is>
-constexpr U repack(const A& x, is<T,Is...>) { return U{x[Is]...}; }
-
 template <int dims, typename K>
 __global__ void cuda_kernel_launch(const K k)
 {
@@ -2577,7 +2603,13 @@ void cuda_kernel_launch_item(const K k, const range<dims> r, const size_t sz)
   const int thread_num = _BLOCKIDX_X * _BLOCKDIM_X + _THREADIDX_X;
 
   if (thread_num < sz) {
+//    auto i = nonlinear_id(r, thread_num);
+//    id<1> i2;
+//    i2 = i;
+//    printf("%lu %lu %p, ", i[0], i2[0], &i);
+
     k(item<dims,false>{nonlinear_id(r, thread_num), r});
+//    k(item<dims,false>{i, r});
   }
 }
 
