@@ -9,7 +9,7 @@
 
 class Foo;
 
-// $MYCUDA/bin/nvc++ -stdpar -acc -std=c++20 -I ../include usm_shortcuts.cpp
+// $MYNVCPP/bin/nvc++ -stdpar -acc -std=c++20 -I ../include usm_shortcuts.cpp
 // 4.8. Unified shared memory (USM)
 
 bool test_usm_device()
